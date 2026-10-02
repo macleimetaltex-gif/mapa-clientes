@@ -1732,7 +1732,7 @@ function formVisita(id, manual){
     if(dia === iso) marcarFeita(id);
     const virou = converter(c);
     if(crono){ va = null; salvarVA(); }
-    salvar(); desenhar(); abrirDetalhe(id);
+    salvar(); desenhar(); fecharPainel(); // pedido do usuário: salvar a visita fecha o card
     toast(virou ? 'Comprou! Agora é cliente da carteira' : 'Visita registrada');
   };
 }
