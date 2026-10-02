@@ -176,7 +176,7 @@ body.picking .cross,body.picking .pickbar{display:block}
 body.picking .fabs,body.picking .chips{display:none}
 body.selecting .selbar{display:block}
 body.selecting .fabs{display:none}
-.num{width:20px;height:20px;border-radius:50%;background:var(--num-bg);color:var(--num-fg);border:2px solid var(--pin-ring);display:grid;place-items:center;font:700 11px/1 var(--sans);box-shadow:0 1px 3px rgba(0,0,0,.35);transform-origin:-2px 42px;transform:scale(calc(var(--esc,.8) * 1.25))} /* números da rota: acompanham a gota da rota, 25% maior */
+.num{width:20px;height:20px;border-radius:50%;background:var(--num-bg);color:var(--num-fg);border:2px solid var(--pin-ring);display:grid;place-items:center;font:700 11px/1 var(--sans);box-shadow:0 1px 3px rgba(0,0,0,.35);transform:translate(calc((var(--esc,1) * 1.25 - 1) * 12px), calc((var(--esc,1) * 1.25 - 1) * -32px)) scale(1.2)} /* números da rota: andam até o canto da gota da rota (que tem 1,25 × --esc) sem crescer junto */
 .num.ok{background:#1F9D55;color:#fff}
 .tabs{display:flex;gap:4px;background:var(--surface-2);border-radius:var(--r-md);padding:4px;margin:4px 0 14px}
 .tabs button{flex:1;height:42px;border:0;border-radius:10px;background:none;font:600 15px var(--sans);color:var(--ink-2)}
@@ -687,13 +687,16 @@ const grupo = L.layerGroup().addTo(map);
 const marcadores = new Map();
 let meuMarcador = null;
 
-// Tamanho dos marcadores acompanha o zoom: menores com o mapa afastado (cidade inteira),
-// um pouco maiores de perto. A área de toque continua do tamanho cheio.
+// Tamanho dos marcadores conforme o zoom do Leaflet (fonte única: GL, toque e Leaflet usam isto).
+// Degraus relativos 50% / 60% / 100% (escolhidos pelo usuário), tudo × TAMANHO_BASE = 1,8
+// (pediu 80% maior em 02/10/2026). A gota original tem 26×35 px (cliente) e 32×43 px (lugar).
+const TAMANHO_BASE = 1.8;
+const DEGRAUS_TAMANHO = [[15, 1], [13, .6], [0, .5]]; // [a partir do zoom, tamanho relativo]
+const escalaZoom = z => TAMANHO_BASE * DEGRAUS_TAMANHO.find(([zz]) => z >= zz)[1];
 function ajustarMarcadores(){
   const z = map.getZoom();
   $('#map').classList.toggle('labels', z >= 15);
-  const esc = z >= 15 ? 1 : z >= 13 ? .6 : .5; // de perto 100% (escolha do usuário)
-  $('#map').style.setProperty('--esc', esc);
+  $('#map').style.setProperty('--esc', escalaZoom(z));
 }
 map.on('zoomend', ajustarMarcadores);
 ajustarMarcadores();
@@ -2261,7 +2264,7 @@ if(nuvem.sb){
 // Com 200+ clientes, marcadores como elementos da página andavam atrasados em relação às ruas ao
 // arrastar. Aqui eles são camadas do próprio MapLibre: um desenho só, que se move junto.
 // As gotas são as mesmas (svgGota), transformadas em imagens uma vez ao abrir o app.
-const DPR_GL = 3; // imagens em 3x para ficarem nítidas em qualquer celular
+const DPR_GL = 8; // imagens em 8x: a gota chega a ~2,6× (1,8 × 1,45) e o celular tem até 3 px por ponto
 async function gerarImagensGL(){
   if(!usarGL) return;
   const lista = [];
@@ -2287,7 +2290,8 @@ async function gerarImagensGL(){
 // Mesmo tamanho dos marcadores do Leaflet (ajustarMarcadores). O zoom do MapLibre é o do Leaflet − 1.
 // (o MapLibre exige o "step" do zoom por fora; o aumento de 30% do selecionado vai dentro de cada degrau)
 // (o MapLibre exige o "step" do zoom por fora; o fator de cada cliente vai dentro de cada degrau)
-const tamanhoGL = (comFator) => ['step', ['zoom'], ...[.5, 12, .6, 14, 1, 16, 1].map((v, i) =>
+// Zoom do MapLibre = zoom do Leaflet − 1: degraus em 12 e 14 do MapLibre = 13 e 15 do Leaflet
+const tamanhoGL = (comFator) => ['step', ['zoom'], ...[escalaZoom(0), 12, escalaZoom(13), 14, escalaZoom(15)].map((v, i) =>
   i % 2 ? v : (comFator ? ['*', v, ['coalesce', ['get','fator'], 1]] : v))];
 const tamanhoComSelecao = tamanhoGL(true);
 const geoClientes = () => { const naRota = idsNaRota(); return {type:'FeatureCollection', features: clientes.filter(passaFiltro).map(c => ({
@@ -2307,15 +2311,29 @@ function corTextoGL(){
   if(!GL.estiloPronto) return;
   ['clientes','lugares'].forEach(id => { if(glMapa.getLayer(id)) Object.entries(coresTextoGL()).forEach(([k,v]) => glMapa.setPaintProperty(id, k, v)); });
 }
-function camadaSimbolos(id, tamanho, deslocText){
+// Onde o nome pode ficar em volta da gota, na ordem de preferência: à esquerda (pedido do usuário),
+// à direita, em cima, embaixo. O mapa usa o primeiro lugar livre; se nenhum couber, esse nome some
+// (a gota continua). Medidas em "em" (12,5 px), a partir da ponta da gota:
+// cabeça a `cab` px acima da ponta, meia largura `meia`, altura total `alt`, para o tamanho `s`.
+const TAM_TEXTO = 12.5;
+function lugaresDoNome(s, cab, meia, alt){
+  const em = px => +(px / TAM_TEXTO).toFixed(2);
+  const x = em(meia*s + 4), y = -em(cab*s);
+  return ['literal', ['right', [-x, y], 'left', [x, y], 'bottom', [0, -em(alt*s + 3)], 'top', [0, em(3)]]];
+}
+// O nome só aparece com o zoom de ruas, onde a gota tem TAMANHO_BASE × fator do cliente
+// ("match" só aceita números inteiros; por isso "case" comparando o fator)
+const nomeCliente = ['case', ...[FATOR_ROTA, FATOR_SEL, FATOR_SEL_ROTA].flatMap(f => [['==', ['get','fator'], f], lugaresDoNome(TAMANHO_BASE*f, 22, 13, 35)]), lugaresDoNome(TAMANHO_BASE, 22, 13, 35)];
+const nomeLugar = lugaresDoNome(TAMANHO_BASE, 26, 16, 43);
+function camadaSimbolos(id, tamanho, posNome){
   return {id, type:'symbol', source:id, layout:{
     'icon-image':['get','icone'], 'icon-anchor':'bottom', 'icon-size':tamanho,
     'icon-allow-overlap':true, 'icon-ignore-placement':true,
     'symbol-sort-key':['coalesce', ['get','ordem'], 0],
-    // Nome só de perto (zoom 15 do Leaflet). Se dois nomes se encostam, um some; as gotas ficam todas.
+    // Nome só de perto (zoom 15 do Leaflet), no primeiro lado livre (lugaresDoNome); as gotas aparecem todas
     'text-field':['step', ['zoom'], '', 14, ['get','nome']],
-    'text-font':['Noto Sans Bold'], 'text-size':12.5, 'text-anchor':'left', 'text-justify':'left',
-    'text-offset':deslocText, 'text-optional':true, 'text-max-width':14
+    'text-font':['Noto Sans Bold'], 'text-size':TAM_TEXTO, 'text-justify':'auto',
+    'text-variable-anchor-offset':posNome, 'text-optional':true, 'text-max-width':14
   }, paint:{...coresTextoGL(), 'text-halo-width':1.6}};
 }
 function aplicarSatelite(){
@@ -2341,8 +2359,8 @@ function montarGL(){
   if(!g.getLayer('rota')) g.addLayer({id:'rota', type:'line', source:'rota', layout:{'line-cap':'round'},
     paint:{'line-color':escuro() ? '#8FB8FF' : '#14283B', 'line-width':3, 'line-opacity':.75, 'line-dasharray':[2, 2.6]}});
   // Nome à direita da cabeça da gota (a cabeça sobe com o tamanho da gota)
-  if(!g.getLayer('clientes')) g.addLayer(camadaSimbolos('clientes', tamanhoComSelecao, ['literal',[1.15,-1.75]]));
-  if(!g.getLayer('lugares')) g.addLayer(camadaSimbolos('lugares', tamanhoGL(false), ['literal',[1.45,-2.1]]));
+  if(!g.getLayer('clientes')) g.addLayer(camadaSimbolos('clientes', tamanhoComSelecao, nomeCliente));
+  if(!g.getLayer('lugares')) g.addLayer(camadaSimbolos('lugares', tamanhoGL(false), nomeLugar));
 }
 // Atualiza os dados (filtro, busca, seleção, cadastro...) sem recriar as camadas
 function atualizarGL(){
@@ -2362,7 +2380,7 @@ function linhaRotaGL(pontos){
 function marcadorNoPonto(latlng){
   if(!usarGL || !GL.imagens) return null;
   const p = map.latLngToContainerPoint(latlng), z = map.getZoom();
-  const esc = z >= 15 ? 1 : z >= 13 ? .6 : .5;
+  const esc = escalaZoom(z);
   const lugares = geoLugares().features, visiveis = clientes.filter(passaFiltro);
   // Primeiro procura onde o dedo caiu exatamente; só se não achar, aceita 6 px de folga
   for(const folga of [0, 6]){
