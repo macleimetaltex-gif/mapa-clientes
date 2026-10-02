@@ -346,6 +346,38 @@ select.inp{appearance:auto;padding-right:8px}
   .imp-end{color:#555}
   .imp-item img{width:46mm;height:34mm;object-fit:cover;border-radius:2mm}
 }
+/* ---------- Anotações, pendências e leitor de código ---------- */
+.anotar{margin:0 0 10px;padding:10px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line)}
+.anotar .btn{height:44px;padding:0 12px;font-size:15px}
+.notas{list-style:none;margin:0 0 8px;padding:0}
+.notas li{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--line)}
+.notas span{flex:none;font:700 13px var(--cond);color:var(--ink-2);padding-top:2px}
+.notas p{flex:1;margin:0;font-size:15px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
+.notas .x{border:0;background:none;color:var(--ink-2);font-size:18px;width:28px;height:28px;flex:none}
+.aviso-pend{display:block;width:100%;text-align:left;margin:-4px 0 12px;padding:10px 14px;border-radius:var(--r-md);border:1px solid color-mix(in srgb,#D99A00 50%,transparent);background:color-mix(in srgb,#D99A00 15%,var(--surface));font:600 15px var(--sans);color:var(--ink)}
+.qtd-pend{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:4px;border-radius:999px;background:#D99A00;color:#fff;font:700 12px var(--sans);letter-spacing:0;vertical-align:1px}
+.pend{list-style:none;margin:0 0 6px;padding:0}
+.pend li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+.pend li:first-child{border-top:0}
+.pend p{margin:0;font-size:15px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
+.pend small{color:var(--ink-2);font-size:12.5px}
+.pend div{flex:1;min-width:0}
+.pend li.feita p{text-decoration:line-through;color:var(--ink-2)}
+.pchk{flex:none;width:28px;height:28px;border-radius:8px;border:2px solid #D99A00;background:var(--surface);display:grid;place-items:center;font:700 15px var(--sans);color:#fff}
+.pchk.ok{background:#1F9D55;border-color:#1F9D55}
+.pend .x{border:0;background:none;color:var(--ink-2);font-size:18px;width:28px;height:28px;flex:none}
+#novaPend{margin:4px 0 8px}
+#novaPend .btn{height:44px;font-size:15px}
+.pend-feitas{margin-top:6px}
+.pend-feitas summary{cursor:pointer;color:var(--ink-2);font:600 14px var(--sans);padding:6px 0}
+.leitor{position:fixed;inset:0;z-index:3200;display:none;flex-direction:column;align-items:center;justify-content:flex-end;gap:14px;padding:0 16px calc(env(safe-area-inset-bottom,0px) + 28px);background:#000;color:#fff}
+.leitor.show{display:flex}
+.leitor video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.leitor .mira{position:absolute;left:50%;top:42%;width:min(78vw,340px);height:140px;transform:translate(-50%,-50%);border:3px solid #fff;border-radius:16px;box-shadow:0 0 0 2000px rgba(0,0,0,.45)}
+.leitor p,.leitor .btn{position:relative;z-index:1;margin:0}
+.leitor p{font:600 16px var(--sans);text-shadow:0 1px 3px #000}
+.leitor .btn{min-width:200px;--inv-fg:#fff}
+@media print{ .imp-h2{font-size:16px;margin:16px 0 6px} .imp-pend{font-size:13px;padding:3px 0} }
 /* ---------- Desfazer ---------- */
 .desfazer{position:fixed;left:12px;right:92px;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);z-index:2100;display:none;align-items:center;gap:12px;background:var(--inv-bg);color:var(--inv-fg);border-radius:var(--r-md);padding:8px 8px 8px 16px;box-shadow:var(--sh-2);font:600 15px var(--sans)}
 .desfazer.show{display:flex}
@@ -476,6 +508,12 @@ body.picking .aviso-dia,body.selecting .aviso-dia,body.desenhando .aviso-dia{dis
 <input type="file" id="fileJson" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="visor" id="visor" role="dialog" aria-label="Foto"><img id="visorImg" alt="Foto"></div>
+<div class="leitor" id="leitor" role="dialog" aria-label="Ler código de barras">
+  <video id="leitorVideo" playsinline muted></video>
+  <div class="mira"></div>
+  <p>Aponte a câmera para o código de barras</p>
+  <button class="btn light" id="leitorFechar">Cancelar</button>
+</div>
 <div id="impressao" aria-hidden="true"></div>
 <div class="desfazer" id="desfazer" role="status" aria-live="polite"><span id="desfazerTxt"></span><button id="desfazerBtn">Desfazer</button></div>
 <div class="dialogo" id="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="dlgTxt">
@@ -1149,6 +1187,7 @@ function abrirDetalhe(id){
       ${c.obs?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v12l-4 4H5z"/><path d="M9 9h6M9 13h4"/></svg><span style="white-space:pre-wrap">${esc(c.obs)}</span></div>`:''}
     </div>
     <div class="lastvisit"><b>${textoDias(d)}</b>${ult?` <span class="muted">em ${fmtData(ult)}</span>`:''}</div>
+    <div id="avisoPendWrap">${htmlAvisoPend(c)}</div>
     ${blocoVisita(c)}
     ${(()=>{ const r = rotaDoDia(false); const i = r ? r.paradas.indexOf(c.id) : -1, dia = rotuloDia(diaSel());
       return `<button class="btn block" id="dRota" style="margin-top:8px">${i>=0?`Parada ${i+1} da rota de ${dia} (tirar)`:`Incluir na rota de ${dia}`}</button>`; })()}
@@ -1157,6 +1196,7 @@ function abrirDetalhe(id){
       <a class="btn grow" href="https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}" target="_blank" rel="noopener">Google Maps</a>
       <a class="btn grow" href="https://waze.com/ul?ll=${c.lat},${c.lng}&navigate=yes" target="_blank" rel="noopener">Waze</a>
     </div>
+    <div id="pendencias">${htmlPendencias(c)}</div>
     <h3>Mudar situação</h3>
     ${segStatus(c.status)}
     <h3>Histórico de visitas</h3>
@@ -1175,6 +1215,7 @@ function abrirDetalhe(id){
     toast(virou ? 'Comprou! Agora é cliente da carteira' : 'Situação: '+STATUS[c.status].label);
   };
   ligarBlocoVisita(id);
+  ligarPendencias(id);
   mostrarFotos($('#sheetBody'));
   document.querySelectorAll('#sheetBody img[data-foto]').forEach(img => img.onclick = () => verFoto(img.src));
   $('#dRota').onclick = () => { const dentro = alternarNaRota(id), dia = rotuloDia(diaSel()); abrirDetalhe(id); toast(dentro ? `Incluído na rota de ${dia}` : `Retirado da rota de ${dia}`); };
@@ -1203,9 +1244,16 @@ function visitasDoDia(k){
 const horaVisita = v => v.semHora ? '—' : v.fim ? `${hhmm(Date.parse(v.data))}–${hhmm(Date.parse(v.fim))}` : hhmm(Date.parse(v.data));
 const minVisita = v => v.fim ? (v.min ?? minutosEntre(Date.parse(v.data), Date.parse(v.fim))) : null;
 const tituloDia = k => `${DIAS_SEM[dataDe(k).getDay()]} ${fmtDia(k).slice(0,5)}/${k.slice(0,4)}`;
+// Pendências anotadas no dia (de todos os clientes)
+function pendenciasDoDia(k){
+  const lista = [];
+  clientes.forEach(c => (c.pendencias||[]).forEach(p => { if(diaLocal(p.criada) === k) lista.push({c, p}); }));
+  return lista.sort((a,b) => a.p.criada.localeCompare(b.p.criada));
+}
+const textoPendencias = pend => pend.length ? ['', `*Pendências anotadas (${pend.length})*`, ...pend.map(({c, p}) => `• ${c.nome}: ${p.txt}${p.feita ? ' (resolvida)' : ''}`)] : [];
 function abrirRelatorio(k){
   k = k || hojeKey();
-  const lista = visitasDoDia(k);
+  const lista = visitasDoDia(k), pend = pendenciasDoDia(k);
   const total = lista.reduce((t, {v}) => t + (minVisita(v) || 0), 0);
   const porRes = RESULTADOS.map(r => [r, lista.filter(x => x.v.resultado === r).length]).filter(x => x[1]);
   abrirPainel(`
@@ -1220,6 +1268,7 @@ function abrirRelatorio(k){
           ${v.nota ? `<p>${esc(v.nota)}</p>` : ''}</div>
         ${v.foto && v.foto.id ? `<img class="rel-foto" data-foto="${esc(v.foto.id)}" data-nuvem="${esc(v.foto.nuvem||'')}" alt="Fachada" hidden>` : ''}
       </li>`).join('')}</ul>
+      ${pend.length ? `<h3>Pendências anotadas</h3><ul class="pend">${pend.map(({c, p}) => `<li class="${p.feita ? 'feita' : ''}"><span class="pchk${p.feita ? ' ok' : ''}" aria-hidden="true">${p.feita ? '✓' : ''}</span><div><p>${esc(p.txt)}</p><small>${esc(c.nome)}</small></div></li>`).join('')}</ul>` : ''}
       <button class="btn primary block" id="relPdf" style="margin-top:14px">PDF / Imprimir</button>
       <div class="row" style="margin-top:8px"><button class="btn grow" id="relCsv">Planilha (Excel)</button><button class="btn grow" id="relTxt">Enviar resumo</button></div>`
     : `<div class="empty">Nenhuma visita registrada em ${esc(tituloDia(k))}.</div>`}
@@ -1238,15 +1287,16 @@ function abrirRelatorio(k){
   };
   $('#relTxt').onclick = async () => {
     const texto = [`*Visitas de ${tituloDia(k)}*`, `${lista.length} visita${lista.length===1?'':'s'}${total ? ` · ${fmtMin(total)} em visita` : ''}${porRes.length ? ' · ' + porRes.map(([r,n]) => `${STATUS[r].label}: ${n}`).join(', ') : ''}`, '',
-      ...lista.map(({c, v}, i) => `${i+1}. ${horaVisita(v)}${minVisita(v) !== null ? ` (${fmtMin(minVisita(v))})` : ''} ${c.nome}${STATUS[v.resultado] ? ' — ' + STATUS[v.resultado].label : ''}${v.nota ? '\n   ' + v.nota : ''}`)].join('\n');
+      ...lista.map(({c, v}, i) => `${i+1}. ${horaVisita(v)}${minVisita(v) !== null ? ` (${fmtMin(minVisita(v))})` : ''} ${c.nome}${STATUS[v.resultado] ? ' — ' + STATUS[v.resultado].label : ''}${v.nota ? '\n   ' + v.nota.replace(/\n/g, '\n   ') : ''}`),
+      ...textoPendencias(pend)].join('\n');
     try{ if(navigator.share){ await navigator.share({text:texto}); return; } }catch(e){ if(e && e.name === 'AbortError') return; }
     window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
   };
-  $('#relPdf').onclick = () => imprimirRelatorio(k, lista, total, porRes);
+  $('#relPdf').onclick = () => imprimirRelatorio(k, lista, total, porRes, pend);
 }
 // Monta o relatório numa área só de impressão (com as fotos) e abre a impressão do aparelho,
 // onde dá para escolher "Salvar como PDF"
-async function imprimirRelatorio(k, lista, total, porRes){
+async function imprimirRelatorio(k, lista, total, porRes, pend = []){
   toast('Preparando o PDF…');
   const fotos = await Promise.all(lista.map(({v}) => v.foto ? urlDaFoto(v.foto) : null));
   $('#impressao').innerHTML = `
@@ -1258,7 +1308,8 @@ async function imprimirRelatorio(k, lista, total, porRes){
         ${c.endereco ? `<div class="imp-end">${esc(c.endereco)}</div>` : ''}
         ${v.nota ? `<p>${esc(v.nota)}</p>` : ''}</div>
       ${fotos[i] ? `<img src="${fotos[i]}" alt="Fachada">` : ''}
-    </div>`).join('')}`;
+    </div>`).join('')}
+    ${pend.length ? `<h2 class="imp-h2">Pendências anotadas</h2>${pend.map(({c, p}) => `<div class="imp-pend">${p.feita ? '☑' : '☐'} <b>${esc(c.nome)}:</b> ${esc(p.txt)}</div>`).join('')}` : ''}`;
   await Promise.all([...$('#impressao').querySelectorAll('img')].map(img => img.complete ? null : new Promise(ok => { img.onload = img.onerror = ok; })));
   window.print();
 }
@@ -1397,12 +1448,110 @@ function atualizarFaixaVisita(){
 setInterval(atualizarFaixaVisita, 20000);
 $('#faixaVisita').onclick = () => { if(va) (va.fim ? formVisita : abrirDetalhe)(va.clienteId); };
 
+/* ================= Leitor de código de barras ================= */
+// Usa o BarcodeDetector do Chrome (Android): abre a câmera traseira em tela cheia, lê o primeiro código
+// que aparecer e devolve o texto. Celular sem esse recurso: avisa para digitar.
+async function lerCodigo(){
+  if(!('BarcodeDetector' in window) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('Este celular não lê código de barras pelo navegador. Digite o código.'); return null; }
+  let formatos = []; try{ formatos = await BarcodeDetector.getSupportedFormats(); }catch(e){}
+  if(!formatos.length){ toast('Este celular não lê código de barras pelo navegador. Digite o código.'); return null; }
+  const det = new BarcodeDetector({formats:formatos});
+  let stream;
+  try{ stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false}); }
+  catch(e){ toast(e && e.name === 'NotAllowedError' ? 'Permita o uso da câmera para ler o código.' : 'Não consegui abrir a câmera.'); return null; }
+  const el = $('#leitor'), video = $('#leitorVideo');
+  video.srcObject = stream; el.classList.add('show');
+  // Não fica preso esperando o vídeo começar: em até 1,5 s já passa a procurar o código
+  await Promise.race([video.play().catch(() => {}), new Promise(ok => setTimeout(ok, 1500))]);
+  return new Promise(ok => {
+    let fim = false, t;
+    const fechar = v => { if(fim) return; fim = true; clearTimeout(t); stream.getTracks().forEach(tr => tr.stop()); video.srcObject = null; el.classList.remove('show'); ok(v); };
+    $('#leitorFechar').onclick = () => fechar(null);
+    const ler = async () => {
+      if(fim) return;
+      try{ const r = await det.detect(video); if(r && r.length && r[0].rawValue){ try{ navigator.vibrate && navigator.vibrate(120); }catch(e){} fechar(r[0].rawValue); return; } }catch(e){}
+      t = setTimeout(ler, 200);
+    };
+    ler();
+  });
+}
+// Lê um código e acrescenta "Cód. 123..." no fim do campo de texto
+async function inserirCodigo(seletor){
+  const cod = await lerCodigo(); if(!cod) return;
+  const ta = $(seletor); if(!ta) return;
+  ta.value = (ta.value.trim() ? ta.value.trim() + ' ' : '') + 'Cód. ' + cod + ' ';
+  ta.focus(); toast('Código lido: ' + cod);
+}
+const svgCodigo = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>';
+
+/* ================= Anotações da visita e pendências do cliente ================= */
+// Anotações: ficam na visita em andamento (va.notas, com horário) e entram no texto do resultado.
+// Pendências: o que o cliente pediu para depois. Ficam no cliente (c.pendencias, vão para a nuvem)
+// até serem marcadas como resolvidas: {id, txt, criada, feita}.
+function htmlNotasVisita(){
+  const ns = (va && va.notas) || [];
+  return ns.length ? `<ul class="notas">${ns.map((n, i) => `<li><span>${hhmm(n.t)}</span><p>${esc(n.txt)}</p><button class="x" data-nota="${i}" aria-label="Apagar anotação">×</button></li>`).join('')}</ul>` : '';
+}
+const pendAbertas = c => (c.pendencias || []).filter(p => !p.feita);
+function novaPendencia(c, txt){
+  c.pendencias = c.pendencias || [];
+  c.pendencias.push({id:uid(), txt, criada:new Date().toISOString(), feita:null});
+  salvar();
+}
+function htmlPendencias(c){
+  const abertas = pendAbertas(c), feitas = (c.pendencias || []).filter(p => p.feita);
+  return `<h3>Pendências${abertas.length ? ` <span class="qtd-pend">${abertas.length}</span>` : ''}</h3>
+    ${abertas.length ? `<ul class="pend">${abertas.map(p => `<li><button class="pchk" data-p="${esc(p.id)}" aria-label="Marcar como resolvida"></button><div><p>${esc(p.txt)}</p><small>pedida em ${fmtData(p.criada)}</small></div></li>`).join('')}</ul>`
+      : '<p class="muted" style="margin:0 0 6px">Nenhuma pendência em aberto.</p>'}
+    <div id="novaPend" hidden>
+      <textarea class="inp" id="pendTxt" rows="2" placeholder="Ex.: trazer catálogo novo, cotar item 4521"></textarea>
+      <div class="row" style="margin-top:6px"><button class="btn" id="pendCodigo">${svgCodigo}Código</button><button class="btn primary grow" id="pendAdd">Adicionar pendência</button></div>
+    </div>
+    <button class="linkbtn" id="pendAbrir">+ Nova pendência</button>
+    ${feitas.length ? `<details class="pend-feitas"><summary>${feitas.length} resolvida${feitas.length===1?'':'s'}</summary><ul class="pend">${feitas.map(p => `<li class="feita"><button class="pchk ok" data-p="${esc(p.id)}" aria-label="Reabrir">✓</button><div><p>${esc(p.txt)}</p><small>resolvida em ${fmtData(p.feita)}</small></div><button class="x" data-pdel="${esc(p.id)}" aria-label="Apagar pendência">×</button></li>`).join('')}</ul></details>` : ''}`;
+}
+const htmlAvisoPend = c => { const n = pendAbertas(c).length; return n ? `<button class="aviso-pend" id="irPend">📌 ${n} pendência${n===1?'':'s'} deste cliente</button>` : ''; };
+// Redesenha só a seção (sem reabrir a ficha inteira, para não perder a rolagem nem o que está digitando)
+function atualizarPendencias(c){
+  const el = $('#pendencias'); if(el) el.innerHTML = htmlPendencias(c);
+  const av = $('#avisoPendWrap'); if(av) av.innerHTML = htmlAvisoPend(c);
+}
+function ligarPendencias(id){
+  const c = cli(id), el = $('#pendencias'); if(!c || !el) return;
+  const wrap = $('#avisoPendWrap'); if(wrap) wrap.onclick = e => { if(e.target.closest('#irPend')) el.scrollIntoView({behavior:'smooth', block:'start'}); };
+  el.onclick = async e => {
+    const chk = e.target.closest('[data-p]'), del = e.target.closest('[data-pdel]');
+    if(chk){ const p = c.pendencias.find(x => x.id === chk.dataset.p); if(!p) return; p.feita = p.feita ? null : new Date().toISOString(); salvar(); atualizarPendencias(c); toast(p.feita ? 'Pendência resolvida' : 'Pendência reaberta'); return; }
+    if(del){
+      const i = c.pendencias.findIndex(x => x.id === del.dataset.pdel); if(i < 0) return;
+      const [p] = c.pendencias.splice(i, 1); salvar(); atualizarPendencias(c);
+      avisoDesfazer('Pendência apagada', () => { c.pendencias.splice(Math.min(i, c.pendencias.length), 0, p); salvar(); atualizarPendencias(c); });
+      return;
+    }
+    if(e.target.closest('#pendAbrir')){ $('#novaPend').hidden = false; $('#pendAbrir').hidden = true; $('#pendTxt').focus(); return; }
+    if(e.target.closest('#pendCodigo')){ inserirCodigo('#pendTxt'); return; }
+    if(e.target.closest('#pendAdd')){
+      const txt = $('#pendTxt').value.trim(); if(!txt){ $('#pendTxt').focus(); return; }
+      novaPendencia(c, txt); atualizarPendencias(c); toast('Pendência anotada');
+    }
+  };
+}
+
 // Parte da ficha do cliente: iniciar, ou acompanhar/encerrar a visita em andamento
 function blocoVisita(c){
   const ok = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>';
   if(va && va.clienteId === c.id && !va.fim) return `
     <div class="emvisita"><span class="pulso"></span><div><b>Em visita desde ${hhmm(va.inicio)}</b> · <span id="vaTempo">${fmtMin(minutosEntre(va.inicio, Date.now()))}</span>
       <small>${va.chegou ? 'Encerra sozinha quando você se afastar mais de 50 m.' : 'Encerra sozinha quando você se afastar 50 m. O GPS ainda não confirmou que você chegou.'}</small></div></div>
+    <div class="anotar">
+      <div id="vaNotas">${htmlNotasVisita()}</div>
+      <textarea class="inp" id="vaTxt" rows="2" placeholder="Anotar: pedido, código de item, recado do cliente…"></textarea>
+      <div class="row" style="margin-top:6px">
+        <button class="btn" id="vaCodigo">${svgCodigo}Código</button>
+        <button class="btn grow" id="vaPend">Pendência</button>
+        <button class="btn dark grow" id="vaAnotar">Anotar</button>
+      </div>
+    </div>
     <button class="btn primary block" id="dEncerrar">${ok}Encerrar visita</button>
     <button class="btn block" id="dCancelaVisita" style="margin-top:8px">Cancelar visita</button>`;
   if(va && va.clienteId === c.id && va.fim) return `<button class="btn primary block" id="dResultado">${ok}Registrar resultado da visita</button>`;
@@ -1424,9 +1573,27 @@ function ligarBlocoVisita(id){
   };
   if($('#dVisitaManual')) $('#dVisitaManual').onclick = () => formVisita(id, true);
   if($('#dEncerrar')) $('#dEncerrar').onclick = () => encerrarVisita('botao');
+  // Anotações durante a visita
+  if($('#vaAnotar')){
+    const txt = () => $('#vaTxt').value.trim();
+    $('#vaCodigo').onclick = () => inserirCodigo('#vaTxt');
+    $('#vaAnotar').onclick = () => {
+      if(!txt()){ $('#vaTxt').focus(); return; }
+      va.notas = va.notas || []; va.notas.push({t:Date.now(), txt:txt()}); salvarVA();
+      $('#vaNotas').innerHTML = htmlNotasVisita(); $('#vaTxt').value = ''; toast('Anotado');
+    };
+    $('#vaPend').onclick = () => {
+      if(!txt()){ toast('Escreva a pendência no campo de anotação'); $('#vaTxt').focus(); return; }
+      novaPendencia(c, txt()); $('#vaTxt').value = ''; atualizarPendencias(c); toast('Pendência guardada para a próxima visita');
+    };
+    $('#vaNotas').onclick = e => {
+      const b = e.target.closest('[data-nota]'); if(!b) return;
+      va.notas.splice(+b.dataset.nota, 1); salvarVA(); $('#vaNotas').innerHTML = htmlNotasVisita();
+    };
+  }
   if($('#dResultado')) $('#dResultado').onclick = () => formVisita(id);
   if($('#dCancelaVisita')) $('#dCancelaVisita').onclick = async () => {
-    if(!await confirmar(`Cancelar a visita em ${c.nome}? O tempo não será registrado.`, 'Cancelar visita', 'Continuar visitando')) return;
+    if(!await confirmar(`Cancelar a visita em ${c.nome}? O tempo e as anotações não serão registrados (as pendências ficam).`, 'Cancelar visita', 'Continuar visitando')) return;
     va = null; salvarVA(); abrirDetalhe(id); toast('Visita cancelada');
   };
 }
@@ -1450,7 +1617,7 @@ function formVisita(id, manual){
     </div>
     <p class="muted" id="vDur" style="margin:6px 0 0;font-size:14px"></p>
     <label class="f">Anotação
-      <textarea class="inp" id="vNota" placeholder="Ex.: achou o preço alto, voltar quando chegar a promoção"></textarea></label>
+      <textarea class="inp" id="vNota" placeholder="Ex.: achou o preço alto, voltar quando chegar a promoção">${crono && crono.notas && crono.notas.length ? esc(crono.notas.map(n => hhmm(n.t) + ' ' + n.txt).join('\n')) : ''}</textarea></label>
     <label class="f">Foto da fachada</label>
     <div class="foto-campo">
       <img id="vFotoPrev" alt="Foto da fachada" hidden>
@@ -1489,7 +1656,7 @@ function formVisita(id, manual){
   };
   $('#vCancel').onclick = () => abrirDetalhe(id);
   if($('#vDescartar')) $('#vDescartar').onclick = async () => {
-    if(!await confirmar('Descartar esta visita? O tempo e o que você preencheu não serão registrados.', 'Descartar', 'Voltar')) return;
+    if(!await confirmar('Descartar esta visita? O tempo, as anotações e o que você preencheu não serão registrados (as pendências ficam).', 'Descartar', 'Voltar')) return;
     va = null; salvarVA(); abrirDetalhe(id); toast('Visita descartada');
   };
   $('#vSave').onclick = async () => {
@@ -1559,7 +1726,7 @@ function abrirLista(){
   abrirPainel(`
     <h2>${titulo} <span class="muted" style="font-weight:600">(${lista.length})</span></h2>
     <p class="muted" style="margin:0 0 8px;font-size:14px">${minhaPos?'Ordenados pelos mais próximos de você.':'Ordenados por quem está há mais tempo sem visita. Toque em ◎ para ordenar por distância.'}</p>
-    ${lista.length ? `<ul class="list">${lista.map(({c,d,km}) => `<li><button data-id="${c.id}"><span class="dot${ehP(c)?' p':''}" style="--c:${(STATUS[c.status]||STATUS.nao).cor}"></span><span><span class="nm">${esc(c.nome)}</span><span class="sub">${(STATUS[c.status]||STATUS.nao).label}, ${textoDias(d).toLowerCase()}</span></span><span class="dist">${fmtDist(km)}</span></button></li>`).join('')}</ul>`
+    ${lista.length ? `<ul class="list">${lista.map(({c,d,km}) => `<li><button data-id="${c.id}"><span class="dot${ehP(c)?' p':''}" style="--c:${(STATUS[c.status]||STATUS.nao).cor}"></span><span><span class="nm">${esc(c.nome)}</span><span class="sub">${(STATUS[c.status]||STATUS.nao).label}, ${textoDias(d).toLowerCase()}${pendAbertas(c).length ? ` · 📌 ${pendAbertas(c).length} pendência${pendAbertas(c).length===1?"":"s"}` : ""}</span></span><span class="dist">${fmtDist(km)}</span></button></li>`).join('')}</ul>`
       : `<div class="empty">Nenhum cliente neste filtro.</div>`}
     ${htmlListaLugares()}
   `);
