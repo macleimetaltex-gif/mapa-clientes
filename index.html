@@ -124,7 +124,7 @@ input[type=date]{color-scheme:inherit}
 /* Mapa reserva (OSM) não tem versão escura: escurece por filtro */
 :root[data-tema="escuro"] #map.reserva .leaflet-tile-pane .osm{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}
 /* Marcadores em forma de gota (estilo Google Maps). A ponta fica no local exato. */
-.pin{position:relative;width:26px;height:35px;transform-origin:50% 100%;transition:transform .15s}
+.pin{position:relative;width:26px;height:35px;transform-origin:50% 100%;transform:scale(var(--esc,.8));transition:transform .15s}
 .pin.grande{width:32px;height:43px}
 .pin svg.gota{display:block;overflow:visible;filter:drop-shadow(0 2px 2px rgba(0,0,0,.4))}
 .dot.p{position:relative}
@@ -135,10 +135,10 @@ input[type=date]{color-scheme:inherit}
 .tag{display:inline-flex;align-items:center;gap:5px;font:600 13px var(--sans);padding:4px 10px;border-radius:999px;background:var(--surface-2);color:var(--ink);border:1px solid var(--line);margin-left:6px}
 .hist .res{display:inline-flex;align-items:center;gap:5px;font-weight:600;font-size:14px;margin-bottom:2px}
 .hist .res .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}
-.pin.sel{transform:scale(1.3)}
+.pin.sel{transform:scale(calc(var(--esc,.8) * 1.3))}
 .pin.sel svg.gota{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 70%,transparent)) drop-shadow(0 2px 2px rgba(0,0,0,.4))}
 /* Nome ao lado da cabeça da gota */
-.pin .lbl{display:none;position:absolute;left:28px;top:13px;transform:translateY(-50%);white-space:nowrap;font:700 13px var(--cond);color:var(--ink);
+.pin .lbl{display:none;position:absolute;left:28px;top:13px;transform:translateY(-50%);white-space:nowrap;font:700 calc(13px / var(--esc,.8)) var(--cond);color:var(--ink);
   text-shadow:0 0 3px var(--halo),0 0 3px var(--halo),0 0 3px var(--halo),0 0 3px var(--halo);pointer-events:none}
 #map.labels .pin .lbl{display:block}
 .pin.grande .lbl{left:34px;top:16px}
@@ -171,7 +171,7 @@ body.picking .cross,body.picking .pickbar{display:block}
 body.picking .fabs,body.picking .chips{display:none}
 body.selecting .selbar{display:block}
 body.selecting .fabs{display:none}
-.num{width:20px;height:20px;border-radius:50%;background:var(--num-bg);color:var(--num-fg);border:2px solid var(--pin-ring);display:grid;place-items:center;font:700 11px/1 var(--sans);box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.num{width:20px;height:20px;border-radius:50%;background:var(--num-bg);color:var(--num-fg);border:2px solid var(--pin-ring);display:grid;place-items:center;font:700 11px/1 var(--sans);box-shadow:0 1px 3px rgba(0,0,0,.35);transform-origin:-2px 42px;transform:scale(var(--esc,.8))}
 .num.ok{background:#1F9D55;color:#fff}
 .tabs{display:flex;gap:4px;background:var(--surface-2);border-radius:var(--r-md);padding:4px;margin:4px 0 14px}
 .tabs button{flex:1;height:42px;border:0;border-radius:10px;background:none;font:600 15px var(--sans);color:var(--ink-2)}
@@ -578,7 +578,16 @@ const grupo = L.layerGroup().addTo(map);
 const marcadores = new Map();
 let meuMarcador = null;
 
-map.on('zoomend', () => $('#map').classList.toggle('labels', map.getZoom() >= 15));
+// Tamanho dos marcadores acompanha o zoom: menores com o mapa afastado (cidade inteira),
+// um pouco maiores de perto. A área de toque continua do tamanho cheio.
+function ajustarMarcadores(){
+  const z = map.getZoom();
+  $('#map').classList.toggle('labels', z >= 15);
+  const esc = z >= 17 ? .8 : z >= 15 ? .7 : z >= 13 ? .6 : .5;
+  $('#map').style.setProperty('--esc', esc);
+}
+map.on('zoomend', ajustarMarcadores);
+ajustarMarcadores();
 map.on('contextmenu', e => { if(!document.body.classList.contains('picking') && !document.body.classList.contains('desenhando')) abrirFormulario({lat:e.latlng.lat, lng:e.latlng.lng}); });
 
 // Gota no estilo Google Maps. Cliente: 26×35 com bolinha branca (ou "P" de prospecção).
