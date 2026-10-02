@@ -1,0 +1,2441 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6F9" id="metaTema">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Mapa de Clientes</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📍</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+<script>
+/* Tema: aplica antes de desenhar a página para não piscar branco no modo escuro */
+(function(){
+  var pref = 'auto'; try{ pref = localStorage.getItem('mapaClientes.tema') || 'auto'; }catch(e){}
+  var escuro = pref==='escuro' || (pref==='auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.tema = escuro ? 'escuro' : 'claro';
+})();
+</script>
+<style>
+/* ---------- Cores (tema claro) ---------- */
+:root{
+  --bg:#EEF1F5;
+  --surface:#FFFFFF;
+  --surface-2:#F2F4F8;
+  --glass:rgba(255,255,255,.86);
+  --ink:#14283B;        /* azul-noite: texto */
+  --ink-2:#5A6B7E;      /* texto secundário */
+  --line:#E1E6EC;
+  --go:#0E7A5F;         /* ação principal */
+  --go-press:#0A5E49;
+  --go-soft:#E2F3EE;
+  --warn:#C8372D;
+  --warn-line:#F1CFCB;
+  --inv-bg:#14283B;     /* barras escuras (avisos, modo seleção) */
+  --inv-fg:#FFFFFF;
+  --tipo:#14283B;       /* bolinha do "P" nos filtros */
+  --num-bg:#14283B; --num-fg:#FFFFFF;
+  --pin-ring:#FFFFFF;
+  --halo:#FFFFFF;       /* contorno do nome no mapa */
+  --ok-bg:#E4F5EB; --ok-fg:#14532D;
+  --scrim:rgba(12,22,34,.38);
+  --map-bg:#EEF0F2;
+  --focus:#3B82F6;
+  --sh-1:0 1px 2px rgba(16,32,48,.06),0 4px 14px rgba(16,32,48,.08);
+  --sh-2:0 12px 40px rgba(16,32,48,.20);
+  --r-xl:24px; --r-lg:18px; --r-md:14px; --r-sm:10px;
+  --sans:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --cond:"Barlow Semi Condensed","Barlow",system-ui,sans-serif;
+  color-scheme:light;
+  box-sizing:border-box;
+}
+/* ---------- Cores (tema escuro) ---------- */
+:root[data-tema="escuro"]{
+  --bg:#0C131B;
+  --surface:#16202B;
+  --surface-2:#1F2B38;
+  --glass:rgba(20,29,39,.86);
+  --ink:#E8EEF5;
+  --ink-2:#9DADBE;
+  --line:#2B3949;
+  --go:#18A882;
+  --go-press:#12896A;
+  --go-soft:rgba(24,168,130,.16);
+  --warn:#F26B60;
+  --warn-line:#5B2D2A;
+  --inv-bg:#E8EEF5;
+  --inv-fg:#0C131B;
+  --tipo:#3D5064;
+  --num-bg:#F2F5F8; --num-fg:#0C131B;
+  --pin-ring:#FFFFFF;
+  --halo:#0C131B;
+  --ok-bg:rgba(31,157,85,.18); --ok-fg:#9BE3B7;
+  --scrim:rgba(0,0,0,.55);
+  --map-bg:#1E2833;
+  --focus:#7FB0FF;
+  --sh-1:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35);
+  --sh-2:0 12px 40px rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-tap-highlight-color:transparent;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+button,a.btn{transition:transform .12s ease,background-color .15s,border-color .15s,box-shadow .15s}
+button:active:not(:disabled),a.btn:active{transform:scale(.97)}
+input[type=date]{color-scheme:inherit}
+
+/* ---------- Barra superior ---------- */
+.top{position:fixed;top:0;left:0;right:0;z-index:1000;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 6px;pointer-events:none}
+.top > *{pointer-events:auto}
+.searchrow{display:flex;gap:8px;align-items:center}
+.search{flex:1;display:flex;align-items:center;gap:8px;background:var(--glass);-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);
+  border:1px solid var(--line);border-radius:var(--r-lg);padding:0 6px 0 14px;height:52px;box-shadow:var(--sh-1)}
+.search:focus-within{border-color:var(--go);box-shadow:var(--sh-1),0 0 0 3px var(--go-soft)}
+.search svg{flex:none;opacity:.55}
+.search input{flex:1;border:0;outline:0;font:500 16px var(--sans);color:var(--ink);background:transparent;min-width:0}
+.search input::placeholder{color:var(--ink-2)}
+.search input::-webkit-search-cancel-button{display:none}
+.search .clear{border:0;background:var(--surface-2);width:34px;height:34px;border-radius:50%;display:none;font-size:18px;color:var(--ink-2)}
+.search.has .clear{display:grid;place-items:center}
+.iconbtn{flex:none;width:52px;height:52px;border-radius:var(--r-lg);border:1px solid var(--line);background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);display:grid;place-items:center;box-shadow:var(--sh-1)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:10px 2px 6px;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 92%,transparent);mask-image:linear-gradient(90deg,#000 92%,transparent)}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;display:flex;align-items:center;gap:6px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);font:600 14px var(--sans);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.chip .dot{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.chip .n{font-weight:500;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{background:var(--inv-bg);border-color:var(--inv-bg);color:var(--inv-fg)}
+.chip[aria-pressed="true"] .n{color:inherit;opacity:.7}
+.chip.revisar{border-color:#D99A00}
+
+/* ---------- Mapa ---------- */
+#map{position:fixed;inset:0;background:var(--map-bg)}
+.leaflet-container{background:var(--map-bg);font-family:var(--sans)}
+.leaflet-control-attribution{font-size:10px}
+:root[data-tema="escuro"] .leaflet-control-attribution{background:rgba(12,19,27,.7)!important;color:#9DADBE}
+:root[data-tema="escuro"] .leaflet-control-attribution a{color:#BFD3EA}
+/* Mapa reserva (OSM) não tem versão escura: escurece por filtro */
+:root[data-tema="escuro"] #map.reserva .leaflet-tile-pane .osm{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}
+/* Marcadores em forma de gota (estilo Google Maps). A ponta fica no local exato. */
+.pin{position:relative;width:26px;height:35px;transform-origin:50% 100%;transition:transform .15s}
+.pin.grande{width:32px;height:43px}
+.pin svg.gota{display:block;overflow:visible;filter:drop-shadow(0 2px 2px rgba(0,0,0,.4))}
+.dot.p{position:relative}
+.dot.p::after{content:"P";position:absolute;inset:0;display:grid;place-items:center;font:700 9px/1 var(--sans);color:#fff}
+.list .dot.p{width:20px;height:20px}
+.list .dot.p::after{font-size:11px}
+.chip .dot.p{width:16px;height:16px}
+.tag{display:inline-flex;align-items:center;gap:5px;font:600 13px var(--sans);padding:4px 10px;border-radius:999px;background:var(--surface-2);color:var(--ink);border:1px solid var(--line);margin-left:6px}
+.hist .res{display:inline-flex;align-items:center;gap:5px;font-weight:600;font-size:14px;margin-bottom:2px}
+.hist .res .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}
+.pin.sel{transform:scale(1.3)}
+.pin.sel svg.gota{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 70%,transparent)) drop-shadow(0 2px 2px rgba(0,0,0,.4))}
+/* Nome ao lado da cabeça da gota */
+.pin .lbl{display:none;position:absolute;left:28px;top:13px;transform:translateY(-50%);white-space:nowrap;font:700 13px var(--cond);color:var(--ink);
+  text-shadow:0 0 3px var(--halo),0 0 3px var(--halo),0 0 3px var(--halo),0 0 3px var(--halo);pointer-events:none}
+#map.labels .pin .lbl{display:block}
+.pin.grande .lbl{left:34px;top:16px}
+/* Ícone pequeno de hotel/casa nas listas e filtros (quadrado arredondado) */
+.lugar{position:relative;background:var(--c);border:2.5px solid #fff;display:grid;place-items:center}
+.lugar.mini{flex:none;width:24px;height:24px;border-radius:7px;border-width:2px;box-shadow:none}
+.lugar.mini::after{display:none}
+.status svg{flex:none}
+#sheetBody.eh-hotel .so-cliente{display:none}
+.chip .lugar.mini{width:20px;height:20px;border-radius:6px;border-width:1.5px}
+.me{width:18px;height:18px;border-radius:50%;background:#2F7BF6;border:3px solid #fff;box-shadow:0 0 0 6px rgba(47,123,246,.22);animation:pulso 2.4s infinite}
+@keyframes pulso{0%{box-shadow:0 0 0 0 rgba(47,123,246,.45)}70%{box-shadow:0 0 0 14px rgba(47,123,246,0)}100%{box-shadow:0 0 0 0 rgba(47,123,246,0)}}
+
+/* ---------- Botões flutuantes ---------- */
+.fabs{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);z-index:1000;display:flex;flex-direction:column;gap:12px;align-items:center}
+.fabgroup{display:flex;flex-direction:column;background:var(--glass);-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-1);overflow:hidden}
+.fab{width:52px;height:52px;border:0;background:transparent;display:grid;place-items:center;color:var(--ink)}
+.fabgroup .fab + .fab{border-top:1px solid var(--line)}
+.fab.on{background:var(--inv-bg);color:var(--inv-fg)}
+.fab.main{width:64px;height:64px;border-radius:20px;background:var(--go);color:#fff;box-shadow:0 8px 22px color-mix(in srgb,var(--go) 45%,transparent)}
+.fab.main:active{background:var(--go-press)}
+
+/* ---------- Modo "marcar no mapa" ---------- */
+.cross{position:fixed;left:50%;top:50%;z-index:900;transform:translate(-50%,-100%);display:none;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(0,0,0,.3))}
+.cross path{fill:var(--go)}
+.pickbar,.selbar{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);z-index:1100;display:none;background:var(--inv-bg);color:var(--inv-fg);border-radius:var(--r-xl);padding:16px;box-shadow:var(--sh-2)}
+.pickbar p,.selbar p{margin:0 0 12px;font-size:15px;line-height:1.35}
+@media (min-width:720px){.pickbar,.selbar{left:50%;right:auto;width:440px;transform:translateX(-50%)}}
+body.picking .cross,body.picking .pickbar{display:block}
+body.picking .fabs,body.picking .chips{display:none}
+body.selecting .selbar{display:block}
+body.selecting .fabs{display:none}
+.num{width:20px;height:20px;border-radius:50%;background:var(--num-bg);color:var(--num-fg);border:2px solid var(--pin-ring);display:grid;place-items:center;font:700 11px/1 var(--sans);box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.num.ok{background:#1F9D55;color:#fff}
+.tabs{display:flex;gap:4px;background:var(--surface-2);border-radius:var(--r-md);padding:4px;margin:4px 0 14px}
+.tabs button{flex:1;height:42px;border:0;border-radius:10px;background:none;font:600 15px var(--sans);color:var(--ink-2)}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--sh-1)}
+.stops{list-style:none;margin:0;padding:0}
+.stops li{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.stops li:first-child{border-top:0}
+.stops .chk{flex:none;width:38px;height:38px;border-radius:50%;border:2px solid var(--ink);background:var(--surface);font:700 15px var(--sans)}
+.stops li.done .chk{background:#1F9D55;border-color:#1F9D55;color:#fff}
+.stops li.done .nm{text-decoration:line-through;color:var(--ink-2)}
+.stops .nmbtn{flex:1;min-width:0;border:0;background:none;text-align:left;padding:4px 0}
+.stops .nm{display:flex;align-items:center;gap:7px;font-weight:600;font-size:16px}
+.stops .nm .dot{flex:none;width:12px;height:12px;border-radius:50%;background:var(--c)}
+.stops .nm .dot.p{width:16px;height:16px}
+.stops .sub{font-size:13px;color:var(--ink-2)}
+.stops .mv{flex:none;display:flex;gap:3px}
+.stops .mv button{width:34px;height:38px;border:0;background:var(--surface-2);border-radius:10px;font-size:13px;color:var(--ink-2)}
+.stops .mv button:disabled{opacity:.3}
+.ok-msg{margin:12px 0 0;padding:12px 14px;border-radius:var(--r-md);background:var(--ok-bg);color:var(--ok-fg);font-weight:600}
+.live{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.live div{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px}
+.live b{display:block;font:700 30px/1.05 var(--cond);font-variant-numeric:tabular-nums}
+.live span{font-size:13px;color:var(--ink-2)}
+.linkbtn{border:0;background:none;padding:0;color:var(--go);font:600 14px var(--sans);text-decoration:underline}
+.trip{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 118px);z-index:1001;display:none;align-items:center;gap:8px;background:#2563C9;color:#fff;border:0;border-radius:999px;padding:10px 16px;font:600 14px var(--sans);box-shadow:0 6px 18px rgba(37,99,201,.45);white-space:nowrap}
+.trip.show{display:flex}
+.trip:active{transform:translateX(-50%) scale(.97)}
+.trip i{width:9px;height:9px;border-radius:50%;background:#fff;animation:pisca 1.4s infinite}
+@keyframes pisca{50%{opacity:.25}}
+body.picking .trip,body.selecting .trip{display:none}
+
+/* ---------- Painel inferior ---------- */
+.scrim{position:fixed;inset:0;z-index:1200;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .2s}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:1300;max-height:88%;display:flex;flex-direction:column;background:var(--surface);
+  border-radius:var(--r-xl) var(--r-xl) 0 0;box-shadow:var(--sh-2);transform:translateY(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+:root[data-tema="escuro"] .sheet{border:1px solid var(--line);border-bottom:0}
+body.sheet-open .scrim{opacity:1;pointer-events:auto}
+body.sheet-open .sheet{transform:none}
+.sheet.arrastando{transition:none}
+@media (min-width:720px){.sheet{left:auto;right:16px;bottom:16px;width:420px;border-radius:var(--r-xl);max-height:calc(100% - 32px)}
+  :root[data-tema="escuro"] .sheet{border-bottom:1px solid var(--line)}}
+.grip{flex:none;padding:10px 0 4px;touch-action:none;cursor:grab}
+.grip::before{content:"";display:block;width:44px;height:5px;border-radius:3px;background:var(--line);margin:0 auto}
+.sheet-body{overflow-y:auto;padding:8px 18px 22px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.sheet h2{font:700 25px/1.15 var(--cond);margin:4px 0 6px;letter-spacing:.005em}
+.sheet h3{font:700 13px var(--sans);text-transform:uppercase;letter-spacing:.07em;color:var(--ink-2);margin:22px 0 8px}
+.muted{color:var(--ink-2)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.btn{height:50px;padding:0 18px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface-2);font:600 16px var(--sans);display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;color:var(--ink)}
+.btn.primary{background:var(--go);border-color:var(--go);color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--go) 30%,transparent)}
+.btn.primary:active{background:var(--go-press)}
+.btn.dark{background:var(--inv-bg);border-color:var(--inv-bg);color:var(--inv-fg)}
+.btn.danger{color:var(--warn);background:transparent;border-color:var(--warn-line)}
+.btn.block{width:100%}
+.btn.grow{flex:1}
+.btn.light{background:color-mix(in srgb,var(--inv-fg) 14%,transparent);border-color:color-mix(in srgb,var(--inv-fg) 28%,transparent);color:var(--inv-fg)}
+.bigchoice{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:16px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);margin-bottom:10px}
+.bigchoice strong{display:block;font-size:17px}
+.bigchoice span{font-size:14px;color:var(--ink-2)}
+.bigchoice .ic{flex:none;width:46px;height:46px;border-radius:14px;background:var(--go-soft);color:var(--go);display:grid;place-items:center}
+
+label.f{display:block;margin:14px 0 0;font:600 14px var(--sans);color:var(--ink-2)}
+.inp{display:block;width:100%;margin-top:6px;height:50px;padding:0 14px;border:1px solid var(--line);border-radius:var(--r-sm);font:500 16px var(--sans);color:var(--ink);background:var(--surface-2)}
+.inp:focus{outline:0;border-color:var(--go);box-shadow:0 0 0 3px var(--go-soft);background:var(--surface)}
+.inp::placeholder{color:var(--ink-2);opacity:.8}
+textarea.inp{height:auto;min-height:88px;padding:12px 14px;resize:vertical;line-height:1.4}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.seg button{display:flex;align-items:center;gap:6px;height:42px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font:600 14px var(--sans)}
+.seg button .dot{width:11px;height:11px;border-radius:50%;background:var(--c)}
+.seg button[aria-pressed="true"]{border-color:var(--c);background:color-mix(in srgb,var(--c) 18%,var(--surface));box-shadow:inset 0 0 0 1px var(--c)}
+
+.status{display:inline-flex;align-items:center;gap:6px;font:600 14px var(--sans);padding:5px 11px 5px 9px;border-radius:999px;background:color-mix(in srgb,var(--c) 18%,var(--surface))}
+.status .dot{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.facts{margin:12px 0 4px;display:grid;gap:8px}
+.fact{display:flex;gap:10px;align-items:flex-start;font-size:16px;line-height:1.35}
+.fact svg{flex:none;margin-top:2px;opacity:.6}
+.lastvisit{margin:14px 0;padding:12px 14px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line);font-size:15px}
+.lastvisit b{font-family:var(--cond);font-size:18px}
+.hist{list-style:none;margin:0;padding:0}
+.hist li{padding:10px 0;border-top:1px solid var(--line);display:flex;gap:10px}
+.hist li:first-child{border-top:0}
+.hist .when{flex:none;width:86px;font:600 14px var(--sans);color:var(--ink-2)}
+.hist .what{flex:1;font-size:15px;line-height:1.4;white-space:pre-wrap}
+.hist .x{border:0;background:none;color:var(--ink-2);font-size:18px;width:32px;height:32px;flex:none;border-radius:50%}
+
+.list{list-style:none;margin:0;padding:0}
+.list li button{width:100%;display:flex;align-items:center;gap:12px;padding:12px 4px;border:0;border-top:1px solid var(--line);background:none;text-align:left;border-radius:0}
+.list li:first-child button{border-top:0}
+.list .dot{flex:none;width:14px;height:14px;border-radius:50%;background:var(--c);border:2px solid var(--pin-ring);box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+.list .nm{font-weight:600;font-size:16px;display:block}
+.list .sub{font-size:14px;color:var(--ink-2)}
+.list .dist{margin-left:auto;font:600 14px var(--cond);color:var(--ink-2);flex:none}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0 14px}
+.summary div{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-md);padding:12px}
+.summary b{display:block;font:700 28px/1 var(--cond);font-variant-numeric:tabular-nums}
+.summary span{font-size:13px;color:var(--ink-2)}
+.menuitem{display:flex;width:100%;gap:14px;align-items:center;padding:12px 4px;border:0;border-top:1px solid var(--line);background:none;text-align:left;font-size:16px;font-weight:600}
+.menuitem small{display:block;color:var(--ink-2);font-size:13px;font-weight:500}
+.menuitem .ic{flex:none;width:42px;height:42px;border-radius:12px;background:var(--surface-2);display:grid;place-items:center;color:var(--ink)}
+.empty{text-align:center;padding:24px 8px;color:var(--ink-2)}
+.tema{display:flex;gap:4px;background:var(--surface-2);border-radius:var(--r-md);padding:4px;margin:6px 0 4px}
+.tema button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:42px;border:0;border-radius:10px;background:none;font:600 14px var(--sans);color:var(--ink-2)}
+.tema button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--sh-1)}
+/* ---------- Minhas rotas ---------- */
+.drawbar{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);z-index:1100;display:none;background:var(--inv-bg);color:var(--inv-fg);border-radius:var(--r-xl);padding:16px;box-shadow:var(--sh-2)}
+.drawbar p{margin:0 0 6px;font-size:15px;line-height:1.35}
+.drawbar .info{font:700 20px var(--cond);margin:0 0 12px;min-height:1em}
+.drawbar .info:empty{display:none}
+.drawbar .btn:disabled{opacity:.4}
+@media (min-width:720px){.drawbar{left:50%;right:auto;width:440px;transform:translateX(-50%)}}
+body.desenhando .drawbar{display:block}
+body.desenhando .fabs,body.desenhando .chips,body.desenhando .trip{display:none!important}
+body.desenhando #map{cursor:crosshair}
+.marco{width:100%;height:100%;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);background:#7C3AED;cursor:grab}
+.marco.ini{background:#1F9D55}
+.marco.fim{background:#C8372D}
+.marco.via{border-width:2px}
+.trip.segue{background:#7C3AED;box-shadow:0 6px 18px rgba(124,58,237,.45)}
+.trip.show ~ .trip.segue{top:calc(env(safe-area-inset-top,0px) + 164px)}
+.traco{flex:none;width:22px;height:5px;border-radius:3px;background:#7C3AED}
+.tabs button{padding:0 4px;font-size:14px}
+.check{display:flex;align-items:center;gap:10px;margin:16px 0 0;font:500 15px var(--sans)}
+.check input{width:22px;height:22px;accent-color:var(--go);margin:0}
+select.inp{appearance:auto;padding-right:8px}
+/* ---------- Confirmação ---------- */
+.dialogo{position:fixed;inset:0;z-index:3000;display:none;place-items:center;padding:16px;background:var(--scrim)}
+.dialogo.show{display:grid}
+.dialogo .caixa{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl);padding:20px;box-shadow:var(--sh-2)}
+.dialogo p{margin:0 0 18px;font-size:17px;line-height:1.45;white-space:pre-line}
+.btn.perigo{background:var(--warn);border-color:var(--warn);color:#fff}
+/* ---------- Nuvem ---------- */
+.nuvem{margin:4px 0 6px;padding:14px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line);font-size:15px;line-height:1.4}
+.nuvem b{display:block}
+.nuvem span{display:block;color:var(--ink-2);font-size:14px;margin-top:2px}
+.nuvem.on{border-color:color-mix(in srgb,var(--go) 45%,transparent);background:var(--go-soft)}
+#menuBtn{position:relative}
+#menuBtn::after{content:"";position:absolute;top:8px;right:8px;width:10px;height:10px;border-radius:50%;border:2px solid var(--surface);display:none}
+#menuBtn[data-nuvem="ok"]::after{display:block;background:#1F9D55}
+#menuBtn[data-nuvem="pendente"]::after,#menuBtn[data-nuvem="enviando"]::after{display:block;background:#D99A00}
+#menuBtn[data-nuvem="offline"]::after{display:block;background:#8A94A3}
+#menuBtn[data-nuvem="erro"]::after{display:block;background:#C8372D}
+.aviso{margin:4px 0 6px;padding:14px;border-radius:var(--r-md);background:color-mix(in srgb,#D99A00 16%,var(--surface));border:1px solid color-mix(in srgb,#D99A00 45%,transparent);font-size:15px;line-height:1.4}
+.memoria{margin:14px 0 0;font-size:13px;color:var(--ink-2)}
+.memoria .barra{height:6px;margin-top:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+.memoria i{display:block;height:100%;background:var(--go)}
+.memoria.alta i{background:var(--warn)}
+:root[data-tema="escuro"] .tema button[aria-pressed="true"],:root[data-tema="escuro"] .tabs button[aria-selected="true"]{background:#34475C}
+
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 118px);transform:translate(-50%,-20px);z-index:2000;background:var(--inv-bg);color:var(--inv-fg);padding:12px 18px;border-radius:var(--r-md);font-weight:600;font-size:15px;opacity:0;transition:.2s;pointer-events:none;max-width:90%;text-align:center;box-shadow:var(--sh-2)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div id="map" aria-label="Mapa de clientes"></div>
+
+<div class="top">
+  <div class="searchrow">
+    <div class="search" id="searchBox">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Buscar cliente ou endereço" autocomplete="off" enterkeyhint="search">
+      <button class="clear" id="qClear" aria-label="Limpar busca">×</button>
+    </div>
+    <button class="iconbtn" id="menuBtn" aria-label="Menu">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+  <div class="chips" id="chips" role="toolbar" aria-label="Filtrar clientes"></div>
+</div>
+
+<div class="fabs">
+  <div class="fabgroup">
+    <button class="fab" id="layerBtn" aria-label="Alternar mapa limpo e satélite">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+    </button>
+    <button class="fab" id="routeBtn" aria-label="Rotas">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H16a3.5 3.5 0 0 0 0-7H8a3.5 3.5 0 0 1 0-7h7.5"/></svg>
+    </button>
+    <button class="fab" id="listBtn" aria-label="Lista de clientes">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor"/></svg>
+    </button>
+  </div>
+  <div class="fabgroup">
+    <button class="fab" id="locBtn" aria-label="Minha localização">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+    </button>
+  </div>
+  <button class="fab main" id="addBtn" aria-label="Adicionar cliente">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</div>
+
+<svg class="cross" width="44" height="56" viewBox="0 0 44 56" aria-hidden="true">
+  <path d="M22 54C22 54 40 33 40 20A18 18 0 0 0 4 20c0 13 18 34 18 34Z" stroke="#fff" stroke-width="3"/>
+  <circle cx="22" cy="20" r="6" fill="#fff"/>
+</svg>
+<div class="pickbar" role="dialog" aria-label="Marcar local no mapa">
+  <p id="pickTxt">Arraste o mapa até o pino ficar em cima do cliente.</p>
+  <div class="row">
+    <button class="btn light grow" id="pickCancel">Cancelar</button>
+    <button class="btn primary grow" id="pickOk">Usar este local</button>
+  </div>
+</div>
+
+<div class="selbar" role="dialog" aria-label="Montar rota de hoje">
+  <p id="selTxt"></p>
+  <button class="btn primary block" id="selOk">Pronto</button>
+</div>
+<button class="trip" id="trip"><i></i><span id="tripTxt">Gravando viagem</span></button>
+<button class="trip segue" id="segue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-8-8 18-2-8z"/></svg><span id="segueTxt"></span></button>
+
+<div class="drawbar" role="dialog" aria-label="Desenhar rota">
+  <p id="drawTxt"></p>
+  <p class="info" id="drawInfo"></p>
+  <div class="row">
+    <button class="btn light" id="drawUndo">Desfazer</button>
+    <button class="btn light grow" id="drawCancel">Cancelar</button>
+    <button class="btn primary grow" id="drawOk">Salvar rota</button>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true">
+  <div class="grip"></div>
+  <div class="sheet-body" id="sheetBody"></div>
+</section>
+
+<input type="file" id="fileKml" hidden>
+<input type="file" id="fileJson" hidden>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="dialogo" id="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="dlgTxt">
+  <div class="caixa">
+    <p id="dlgTxt"></p>
+    <div class="row"><button class="btn grow" id="dlgNao">Cancelar</button><button class="btn perigo grow" id="dlgSim">Confirmar</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<script>
+/* ================= Erros visíveis ================= */
+window.addEventListener('error', e => { const t=document.getElementById('toast'); if(t){ t.textContent='Erro: '+(e.message||'desconhecido'); t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),6000);} });
+
+/* ================= Dados ================= */
+const KEY = 'mapaClientes.v1';
+// O que esta janela leu ou gravou por último em cada chave. Se o aparelho tiver outra coisa, foi outra janela do app
+var VISTO = {};
+// Cor da bolinha = situação. Letra P dentro = prospecção.
+const STATUS = {
+  nao:         {label:'Não visitado',  cor:'#8A94A3'},
+  comprou:     {label:'Comprou',       cor:'#1F9D55'},
+  nao_comprou: {label:'Não comprou',   cor:'#D99A00'},
+  retornar:    {label:'Retornar',      cor:'#2563C9'},
+  sem:         {label:'Sem interesse', cor:'#C8372D'}
+};
+const RESULTADOS = ['comprou','nao_comprou','retornar','sem']; // opções ao registrar visita
+const TIPOS = {prospect:'Prospecção', cliente:'Cliente da carteira'};
+const DIAS_ATRASO = 30;
+
+let clientes = carregar();
+let filtro = 'todos';
+let busca = '';
+let selId = null;
+let minhaPos = null;
+
+function carregar(){
+  try { const v = JSON.parse(VISTO[KEY] = localStorage.getItem(KEY)); return Array.isArray(v) ? v.map(migrar) : []; }
+  catch(e){ return []; }
+}
+// Versões anteriores tinham "Cliente ativo" e "Visitado"
+function migrar(c){
+  if(c.status==='ativo') c.status = 'comprou';
+  if(!c.tipo) c.tipo = 'cliente';
+  return c;
+}
+const ehP = c => c.tipo === 'prospect';
+function salvar(){
+  try { const s = JSON.stringify(clientes); localStorage.setItem(KEY, s); VISTO[KEY] = s; }
+  catch(e){ toast('Não consegui salvar neste navegador. Faça um backup pelo menu.'); }
+  agendarEnvio(); // nuvem
+}
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $ = s => document.querySelector(s);
+
+function ultimaVisita(c){
+  if(!c.visitas || !c.visitas.length) return null;
+  return c.visitas.reduce((a,v)=> v.data > a ? v.data : a, c.visitas[0].data);
+}
+function diasDesde(iso){
+  if(!iso) return null;
+  const d = new Date(iso); d.setHours(0,0,0,0);
+  const h = new Date(); h.setHours(0,0,0,0);
+  return Math.round((h - d)/86400000);
+}
+function textoDias(n){
+  if(n === null) return 'Nunca visitado';
+  if(n === 0) return 'Visitado hoje';
+  if(n === 1) return 'Visitado ontem';
+  return `Visitado há ${n} dias`;
+}
+const fmtData = iso => new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'});
+function distKm(c){
+  if(!minhaPos) return null;
+  return map.distance([c.lat,c.lng], minhaPos)/1000;
+}
+function fmtDist(km){ if(km===null) return ''; return km < 1 ? Math.round(km*1000)+' m' : km.toFixed(km<10?1:0).replace('.',',')+' km'; }
+
+function atrasado(c){
+  const d = diasDesde(ultimaVisita(c));
+  return d !== null && d >= DIAS_ATRASO;
+}
+// Minúsculas e sem acento: "joao" acha "João", "acai" acha "Açaí"
+const normal = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+function passaFiltro(c){
+  if(busca){
+    const t = normal(c.nome+' '+(c.responsavel||'')+' '+(c.endereco||'')+' '+(c.obs||''));
+    if(!t.includes(busca)) return false;
+  }
+  if(filtro === 'todos') return true;
+  if(filtro === 'lugares') return false; // só hotéis e casa no mapa
+  if(filtro === 'atraso') return atrasado(c);
+  if(filtro === 'prospect') return ehP(c);
+  return c.status === filtro;
+}
+
+/* ================= Mapa ================= */
+const map = L.map('map', {zoomControl:false, attributionControl:true, minZoom:3, maxZoom:20,
+  maxBounds:[[85,-180],[-85,180]], maxBoundsViscosity:1}).setView([-14.2,-51.9], 4);
+// Mapa limpo: estilos Positron (claro) e Dark (escuro) do OpenFreeMap (gratuitos, sem chave, sem estabelecimentos).
+// Se o navegador não suportar, usa o mapa padrão do OpenStreetMap como reserva.
+const escuro = () => document.documentElement.dataset.tema === 'escuro';
+const estiloMapa = () => 'https://tiles.openfreemap.org/styles/' + (escuro() ? 'dark' : 'positron');
+// O estilo "dark" do OpenFreeMap é quase preto. Por cima dele, uma paleta cinza-azulada mais clara,
+// no tom das barras do app, com ruas bem visíveis.
+const ESCURO_CLARO = {
+  'background':              {'background-color':'#1E2833'},
+  'landuse_residential':     {'fill-color':'#232E3A'},
+  'landcover_wood':          {'fill-color':'#1F3330'},
+  'landuse_park':            {'fill-color':'#1F3330'},
+  'landcover_ice_shelf':     {'fill-color':'#1E2833'},
+  'landcover_glacier':       {'fill-color':'#1E2833'},
+  'water':                   {'fill-color':'#173149'},
+  'waterway':                {'line-color':'#173149'},
+  'water_name':              {'text-color':'#7FA6C9', 'text-halo-color':'#173149'},
+  'building':                {'fill-color':'#2A3644'},
+  'aeroway-area':            {'fill-color':'#2A3644'},
+  'aeroway-runway':          {'line-color':'#3A4757'},
+  'aeroway-taxiway':         {'line-color':'#3A4757'},
+  'road_area_pier':          {'fill-color':'#1E2833'},
+  'road_pier':               {'line-color':'#1E2833'},
+  'highway_path':            {'line-color':'#36434F'},
+  'highway_minor':           {'line-color':'#3B4859'},
+  'highway_major_casing':    {'line-color':'rgba(105,120,140,.9)'},
+  'highway_major_inner':     {'line-color':'#4A586C'},
+  'highway_major_subtle':    {'line-color':'#4A586C'},
+  'highway_motorway_casing': {'line-color':'rgba(130,145,165,.9)'},
+  'highway_motorway_inner':  {'line-color':'#5A6A80'},
+  'highway_motorway_subtle': {'line-color':'#4A586C'},
+  'railway':                 {'line-color':'#4A5566'},
+  'railway_minor':           {'line-color':'#4A5566'},
+  'railway_transit':         {'line-color':'#4A5566'},
+  'railway_dashline':        {'line-color':'#1E2833'},
+  'railway_minor_dashline':  {'line-color':'#1E2833'},
+  'railway_transit_dashline':{'line-color':'#1E2833'},
+  'highway_name_other':      {'text-color':'#A9B6C4', 'text-halo-color':'#1E2833'},
+  'highway_name_motorway':   {'text-color':'#B8C4D0'},
+  'boundary_state':          {'line-color':'#4A5566'},
+  'boundary_country_z0-4':   {'line-color':'#56627A'},
+  'boundary_country_z5-':    {'line-color':'#56627A'}
+};
+function clarearEscuro(){
+  if(!glMapa || !escuro()) return;
+  const pintar = (id, props) => { if(glMapa.getLayer(id)) Object.entries(props).forEach(([k,v]) => glMapa.setPaintProperty(id, k, v)); };
+  Object.entries(ESCURO_CLARO).forEach(([id, p]) => pintar(id, p));
+  // Nomes de bairros, cidades e estados (place_*)
+  (glMapa.getStyle()?.layers || []).filter(l => l.id.startsWith('place_')).forEach(l => pintar(l.id, {'text-color':'#C2CDD8', 'text-halo-color':'rgba(20,28,38,.85)'}));
+}
+let camadaLimpa, glMapa = null;
+try{
+  if(!L.maplibreGL || !window.maplibregl) throw new Error('sem maplibre');
+  camadaLimpa = L.maplibreGL({
+    style:estiloMapa(),
+    attribution:'<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
+  }).addTo(map);
+  glMapa = camadaLimpa.getMaplibreMap();
+  glMapa.on('styledata', () => {
+    (glMapa.getStyle()?.layers || []).forEach(l => { if(l['source-layer']==='poi' && glMapa.getLayer(l.id)) glMapa.removeLayer(l.id); });
+  });
+  glMapa.on('style.load', clarearEscuro);
+}catch(e){
+  camadaLimpa = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, className:'osm', attribution:'© OpenStreetMap'}).addTo(map);
+  $('#map').classList.add('reserva');
+}
+const camadaSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom:19, attribution:'Imagens © Esri'
+});
+const grupo = L.layerGroup().addTo(map);
+const marcadores = new Map();
+let meuMarcador = null;
+
+map.on('zoomend', () => $('#map').classList.toggle('labels', map.getZoom() >= 15));
+map.on('contextmenu', e => { if(!document.body.classList.contains('picking') && !document.body.classList.contains('desenhando')) abrirFormulario({lat:e.latlng.lat, lng:e.latlng.lng}); });
+
+// Gota no estilo Google Maps. Cliente: 26×35 com bolinha branca (ou "P" de prospecção).
+// Hotel e casa ("grande"): 32×43 com o ícone branco dentro. A ponta é o ponto exato do local.
+function svgGota(cor, miolo, grande){
+  const d = grande ? 'M16 42C16 42 2.5 26.6 2.5 16A13.5 13.5 0 0 1 29.5 16C29.5 26.6 16 42 16 42Z'
+                   : 'M13 34C13 34 2 21.6 2 13A11 11 0 0 1 24 13C24 21.6 13 34 13 34Z';
+  const [w,h] = grande ? [32,43] : [26,35];
+  return `<svg class="gota" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="${cor}" stroke="#fff" stroke-width="2"/>${miolo}</svg>`;
+}
+function iconeDe(c){
+  const cor = (STATUS[c.status]||STATUS.nao).cor;
+  const miolo = ehP(c)
+    ? `<circle cx="13" cy="13" r="7.2" fill="#fff"/><text x="13" y="17.1" text-anchor="middle" font-family="Barlow,system-ui,sans-serif" font-size="11.5" font-weight="700" fill="${cor}">P</text>`
+    : `<circle cx="13" cy="13" r="4.3" fill="#fff"/>`;
+  return L.divIcon({
+    className:'', iconSize:[26,35], iconAnchor:[13,34],
+    html:`<div class="pin${c.id===selId?' sel':''}" style="--c:${cor}">${svgGota(cor, miolo)}<span class="lbl">${esc(c.nome)}</span></div>`
+  });
+}
+function desenhar(){
+  grupo.clearLayers(); marcadores.clear();
+  clientes.filter(passaFiltro).forEach(c => {
+    const m = L.marker([c.lat,c.lng], {icon:iconeDe(c), title:c.nome, keyboard:true});
+    m.on('click', () => { if(typeof desenho!=='undefined' && desenho){ addMarco(c.lat, c.lng); return; } if(typeof modoSelecao!=='undefined' && modoSelecao){ const dentro = alternarNaRota(c.id); toast(dentro ? `${c.nome}: incluído` : `${c.nome}: retirado`); } else abrirDetalhe(c.id); });
+    m.addTo(grupo); marcadores.set(c.id, m);
+  });
+  desenharChips();
+  desenharLugares();
+  if(typeof desenharRota==='function') desenharRota();
+}
+
+/* ================= Filtros ================= */
+function desenharChips(){
+  const cont = {todos:clientes.length, atraso:clientes.filter(atrasado).length, prospect:clientes.filter(ehP).length};
+  Object.keys(STATUS).forEach(k => cont[k] = clientes.filter(c=>c.status===k).length);
+  const itens = [['todos','Todos',null], ['prospect','Prospecção','var(--tipo)'], ...Object.entries(STATUS).map(([k,s])=>[k,s.label,s.cor]), ['atraso',`${DIAS_ATRASO}+ dias sem visita`,'var(--tipo)']];
+  $('#chips').innerHTML = itens.map(([k,l,cor]) =>
+    `<button class="chip" data-f="${k}" aria-pressed="${filtro===k}" ${cor?`style="--c:${cor}"`:''}>${cor?`<span class="dot${k==='prospect'?' p':''}"></span>`:''}${l} <span class="n">${cont[k]}</span></button>`
+  ).join('');
+  // Lugares (hotéis e casa): filtro que esconde os clientes e mostra só eles
+  const nLugares = hoteis.length + (R.casa ? 1 : 0);
+  $('#chips .chip[data-f="todos"]').insertAdjacentHTML('afterend', `<button class="chip" data-f="lugares" aria-pressed="${filtro==='lugares'}"><span class="lugar mini" style="--c:${LUGAR.hotel.cor}">${svgLugar('hotel',11)}</span>Lugares <span class="n">${nLugares}</span></button>`);
+  const legado = clientes.filter(c=>c.status==='visitado').length;
+  if(legado) $('#chips').insertAdjacentHTML('afterbegin', `<button class="chip revisar" id="revisar">Revisar ${legado} "Visitado"</button>`);
+}
+$('#chips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if(!b) return;
+  if(b.id==='revisar'){ revisarLegado(); return; }
+  filtro = (filtro === b.dataset.f && b.dataset.f !== 'todos') ? 'todos' : b.dataset.f;
+  desenhar();
+  if(filtro === 'lugares'){
+    const ls = [...hoteis, ...(R.casa ? [R.casa] : [])];
+    if(ls.length) enquadrar(ls); else toast('Nenhum hotel ou casa salvo ainda. Toque no + para adicionar.');
+  }
+});
+
+/* ================= Busca ================= */
+let tBusca;
+$('#q').addEventListener('input', e => {
+  clearTimeout(tBusca);
+  $('#searchBox').classList.toggle('has', !!e.target.value);
+  tBusca = setTimeout(() => { busca = normal(e.target.value.trim()); desenhar(); }, 150);
+});
+$('#q').addEventListener('keydown', async e => {
+  if(e.key !== 'Enter') return;
+  e.target.blur();
+  const achados = [...clientes.filter(passaFiltro), ...hoteis.filter(hotelNaBusca)];
+  if(achados.length){ enquadrar(achados); return; }
+  // Nenhum cliente com esse nome: procura como endereço
+  const termo = e.target.value.trim(); if(!termo) return;
+  try{
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&accept-language=pt-BR&q='+encodeURIComponent(termo));
+    const j = await r.json();
+    if(j[0]){
+      busca=''; desenhar();
+      map.setView([+j[0].lat, +j[0].lon], 17);
+      toast('Endereço encontrado. Toque e segure no mapa para cadastrar aqui.');
+    } else toast('Nenhum cliente ou endereço encontrado.');
+  }catch(err){ toast('Sem conexão para buscar o endereço.'); }
+});
+$('#qClear').onclick = () => { $('#q').value=''; busca=''; $('#searchBox').classList.remove('has'); desenhar(); };
+
+function enquadrar(lista){
+  if(!lista.length) return;
+  seguirMinhaPos(false);
+  if(lista.length === 1) map.setView([lista[0].lat,lista[0].lng], 17);
+  else map.fitBounds(L.latLngBounds(lista.map(c=>[c.lat,c.lng])), {padding:[60,60], maxZoom:17});
+}
+
+/* ================= Painel inferior ================= */
+function abrirPainel(html){
+  $('#sheetBody').className = 'sheet-body';
+  $('#sheetBody').innerHTML = html;
+  $('#sheetBody').scrollTop = 0;
+  document.body.classList.add('sheet-open');
+}
+function fecharPainel(){
+  document.body.classList.remove('sheet-open');
+  if(selId){ const id = selId; selId = null; const c = clientes.find(x=>x.id===id); const m = marcadores.get(id); if(c && m) m.setIcon(iconeDe(c)); }
+}
+$('#scrim').onclick = fecharPainel;
+document.addEventListener('keydown', e => { if(e.key==='Escape'){ if($('#dialogo').classList.contains('show')) $('#dlgNao').click(); else if(document.body.classList.contains('picking')) sairModoMarcar(); else if(document.body.classList.contains('desenhando')) $('#drawCancel').click(); else fecharPainel(); }});
+
+/* ================= Adicionar ================= */
+// O que está sendo marcado: 'cliente', 'hotel' ou 'casa'
+let marcarComo = 'cliente';
+const OQUE = {cliente:'o cliente', hotel:'o hotel', casa:'sua casa'};
+$('#addBtn').onclick = () => { marcarComo = 'cliente'; abrirAdicionar(); };
+function abrirAdicionar(){ abrirPainel(`
+  <h2>Adicionar</h2>
+  <div class="tema" role="group" aria-label="O que marcar" style="margin:6px 0 16px">
+    ${[['cliente','Cliente'],['hotel','Hotel'],['casa','Minha casa']].map(([k,l]) => `<button data-o="${k}" aria-pressed="${marcarComo===k}">${l}</button>`).join('')}
+  </div>
+  <p class="muted" style="margin:0 0 12px">Onde fica ${OQUE[marcarComo]}?${marcarComo==='casa'&&R.casa?' A casa já marcada será trocada pela nova.':''}</p>
+  <button class="bigchoice" data-a="gps">
+    <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
+    <span><strong>Estou no local agora</strong><span>Usa o GPS do celular</span></span>
+  </button>
+  <button class="bigchoice" data-a="mapa">
+    <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21s7-7.2 7-12a7 7 0 0 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg></span>
+    <span><strong>Marcar no mapa</strong><span>Arraste o mapa até o local</span></span>
+  </button>
+  <button class="bigchoice" data-a="coord">
+    <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+    <span><strong>Digitar latitude e longitude</strong><span>Cole as coordenadas do Google Maps ou do WhatsApp</span></span>
+  </button>
+  <p class="muted" style="font-size:14px;margin:8px 0 0">Dica: tocar e segurar em qualquer ponto do mapa também cadastra um cliente ali.</p>
+`); }
+// Abre o formulário certo para o que está sendo marcado
+function marcarAqui(pos){
+  if(marcarComo==='hotel') abrirFormHotel(pos);
+  else if(marcarComo==='casa') definirCasa(pos);
+  else abrirFormulario(pos);
+}
+/* ---------- Digitar coordenadas ---------- */
+// Aceita "-6.067512, -49.902034" (Google Maps), "-6,0675 -49,9020" (vírgula decimal),
+// 6°04'03.0"S 49°54'07.3"W (graus) e links do Google Maps com @lat,lng ou q=lat,lng
+function lerCoordenadas(txt){
+  let s = String(txt||'').trim().toUpperCase();
+  if(!s) return null;
+  let lat, lng;
+  if(s.includes('°')){
+    const re = /(\d+(?:[.,]\d+)?)\s*°\s*(?:(\d+(?:[.,]\d+)?)\s*['′’]\s*)?(?:(\d+(?:[.,]\d+)?)\s*(?:["″”]|'')\s*)?([NSEWLO])?/g;
+    const partes = [...s.matchAll(re)].map(m => {
+      const n = x => parseFloat(String(x||0).replace(',','.'));
+      let v = n(m[1]) + n(m[2])/60 + n(m[3])/3600;
+      if(['S','W','O'].includes(m[4])) v = -v;
+      return {v, h:m[4]};
+    });
+    if(partes.length < 2) return null;
+    // Se vier longitude primeiro (E/W/L/O), inverte
+    if(['E','W','L','O'].includes(partes[0].h)) [partes[0], partes[1]] = [partes[1], partes[0]];
+    lat = partes[0].v; lng = partes[1].v;
+  } else {
+    if(s.includes('@')) s = s.slice(s.indexOf('@')+1);
+    else if(/[?&](Q|QUERY|LL)=/.test(s)) s = s.slice(s.search(/[?&](Q|QUERY|LL)=/));
+    if(!s.includes('.') && (s.match(/-?\d+,\d+/g)||[]).length >= 2) s = s.replace(/(\d),(\d)/g, '$1.$2');
+    const n = s.match(/-?\d+(?:\.\d+)?/g);
+    if(!n || n.length < 2) return null;
+    lat = parseFloat(n[0]); lng = parseFloat(n[1]);
+  }
+  if(!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return {lat, lng};
+}
+const noBrasil = p => p.lat < 6 && p.lat > -34 && p.lng < -34 && p.lng > -74;
+function abrirCoordenadas(){
+  abrirPainel(`
+    <h2>Latitude e longitude</h2>
+    <p class="muted" style="margin:0 0 4px;line-height:1.45">Onde fica ${OQUE[marcarComo]}?</p>
+    <label class="f">Coordenadas<input class="inp" id="cTxt" placeholder="-6.067512, -49.902034" autocomplete="off" inputmode="text"></label>
+    <p class="muted" style="font-size:14px;line-height:1.45;margin:10px 0 0">No Google Maps, toque e segure no local e copie os números que aparecem. Também aceita o formato em graus, como 6°04'03"S 49°54'07"W, e links do Google Maps.</p>
+    <div class="row" style="margin-top:16px">
+      <button class="btn grow" data-a="coordVoltar">Voltar</button>
+      <button class="btn primary grow" data-a="coordOk">Continuar</button>
+    </div>`);
+  setTimeout(() => $('#cTxt')?.focus(), 260);
+  $('#cTxt').addEventListener('keydown', e => { if(e.key==='Enter') usarCoordenadas(); });
+}
+function usarCoordenadas(){
+  let p = lerCoordenadas($('#cTxt').value);
+  if(!p){ toast('Não entendi essas coordenadas. Exemplo: -6.067512, -49.902034'); $('#cTxt').focus(); return; }
+  // Esqueceu o sinal de menos? No Brasil, latitude e longitude quase sempre são negativas
+  if(!noBrasil(p) && noBrasil({lat:-Math.abs(p.lat), lng:-Math.abs(p.lng)})){
+    p = {lat:-Math.abs(p.lat), lng:-Math.abs(p.lng)};
+    toast('Coloquei o sinal de menos: no Brasil as coordenadas são negativas.');
+  } else if(!noBrasil(p)) toast('Atenção: essas coordenadas ficam fora do Brasil.');
+  marcarAqui(p);
+}
+
+$('#sheetBody').addEventListener('click', e => {
+  const o = e.target.closest('[data-o]'); if(o){ marcarComo = o.dataset.o; abrirAdicionar(); return; }
+  const b = e.target.closest('[data-a]'); if(!b) return;
+  const a = b.dataset.a;
+  if(a==='coord') abrirCoordenadas();
+  if(a==='coordVoltar') abrirAdicionar();
+  if(a==='coordOk') usarCoordenadas();
+  if(a==='gps') pegarGPS(marcarAqui);
+  if(a==='mapa'){
+    fecharPainel(); $('#pickTxt').textContent = `Arraste o mapa até o pino ficar em cima ${{cliente:'do cliente', hotel:'do hotel', casa:'da sua casa'}[marcarComo]}.`;
+    document.body.classList.add('picking'); if(map.getZoom()<15 && minhaPos) map.setView(minhaPos,16);
+  }
+});
+$('#pickCancel').onclick = sairModoMarcar;
+$('#pickOk').onclick = () => { const c = map.getCenter(); sairModoMarcar(); marcarAqui({lat:c.lat,lng:c.lng}); };
+function sairModoMarcar(){ document.body.classList.remove('picking'); }
+
+function pegarGPS(ok){
+  if(!navigator.geolocation){ toast('Este navegador não oferece GPS.'); return; }
+  // Posição ao vivo recente: usa direto, sem esperar o GPS
+  if(minhaPos && Date.now() - posEm < 15000){ ok({lat:minhaPos[0], lng:minhaPos[1]}); return; }
+  toast('Buscando sua localização…');
+  navigator.geolocation.getCurrentPosition(p => {
+    minhaPos = [p.coords.latitude, p.coords.longitude]; precisao = p.coords.accuracy; posEm = Date.now();
+    mostrarMinhaPos();
+    ligarLocalizacao();
+    ok({lat:minhaPos[0], lng:minhaPos[1]});
+  }, err => {
+    toast(err.code===1 ? 'Permita o acesso à localização nas configurações do navegador.' : 'Não consegui pegar o GPS. Tente em área aberta.');
+  }, {enableHighAccuracy:true, timeout:15000, maximumAge:10000});
+}
+let precisao = null, posEm = 0, circuloPrecisao = null;
+function mostrarMinhaPos(){
+  if(!minhaPos) return;
+  if(!meuMarcador) meuMarcador = L.marker(minhaPos, {icon:L.divIcon({className:'',html:'<div class="me"></div>',iconSize:[18,18],iconAnchor:[9,9]}), interactive:false, zIndexOffset:1000}).addTo(map);
+  else meuMarcador.setLatLng(minhaPos);
+  // Círculo azul claro = margem de erro do GPS (só quando passa de 25 m)
+  if(precisao && precisao > 25){
+    if(!circuloPrecisao) circuloPrecisao = L.circle(minhaPos, {radius:precisao, color:'#2F7BF6', weight:1, opacity:.4, fillColor:'#2F7BF6', fillOpacity:.1, interactive:false}).addTo(map);
+    else circuloPrecisao.setLatLng(minhaPos).setRadius(precisao);
+  } else if(circuloPrecisao){ circuloPrecisao.remove(); circuloPrecisao = null; }
+}
+
+/* ---------- Localização em tempo real ---------- */
+// O ponto azul acompanha você enquanto o app está aberto. Com o app em segundo plano, o GPS é desligado para poupar bateria.
+let watchLocal = null, seguirMim = false, rotaDesenhadaEm = null, localAtivo = false;
+function ligarLocalizacao(){
+  localAtivo = true;
+  if(!navigator.geolocation || watchLocal !== null || document.visibilityState !== 'visible') return;
+  watchLocal = navigator.geolocation.watchPosition(p => {
+    minhaPos = [p.coords.latitude, p.coords.longitude]; precisao = p.coords.accuracy; posEm = Date.now();
+    mostrarMinhaPos();
+    // Não move o mapa enquanto você marca um local, desenha rota ou acompanha uma rota (que já centraliza sozinha)
+    const ocupado = document.body.classList.contains('picking') || document.body.classList.contains('desenhando') || seguindo;
+    if(seguirMim && !ocupado) map.panTo(minhaPos, {animate:true});
+    // A linha da rota do dia sai da sua posição: redesenha só quando você andar mais de 50 m
+    if(!rotaDesenhadaEm || map.distance(rotaDesenhadaEm, minhaPos) > 50){ rotaDesenhadaEm = minhaPos; desenharRota(); }
+  }, err => {
+    if(err.code===1){ desligarLocalizacao(); localAtivo = false; }
+  }, {enableHighAccuracy:true, maximumAge:5000, timeout:30000});
+}
+function desligarLocalizacao(){
+  if(watchLocal !== null){ navigator.geolocation.clearWatch(watchLocal); watchLocal = null; }
+}
+function seguirMinhaPos(on){
+  seguirMim = on;
+  $('#locBtn').classList.toggle('on', on);
+}
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible'){ if(localAtivo) ligarLocalizacao(); }
+  else desligarLocalizacao(); // localAtivo continua true para religar ao voltar
+});
+// Arrastar o mapa com o dedo para de seguir você
+map.on('dragstart', () => seguirMinhaPos(false));
+// Se a permissão já foi dada antes, liga sozinho ao abrir o app (não pergunta nada)
+if(navigator.permissions && navigator.permissions.query){
+  navigator.permissions.query({name:'geolocation'}).then(s => { if(s.state === 'granted') ligarLocalizacao(); }).catch(()=>{});
+}
+// Botão de localização: centraliza em você e passa a seguir enquanto você anda
+$('#locBtn').onclick = () => pegarGPS(p => {
+  map.setView([p.lat,p.lng], Math.max(map.getZoom(),16));
+  seguirMinhaPos(true);
+  ligarLocalizacao();
+});
+
+/* ================= Formulário ================= */
+function segStatus(atual, chaves){
+  chaves = chaves || Object.keys(STATUS);
+  return `<div class="seg" id="seg">${chaves.map(k => { const s = STATUS[k];
+    return `<button type="button" data-s="${k}" style="--c:${s.cor}" aria-pressed="${k===atual}"><span class="dot"></span>${s.label}</button>`; }).join('')}</div>`;
+}
+// comHotel: no cadastro novo, "Hotel" aparece como terceiro tipo e salva como lugar, não como cliente
+function segTipo(atual, comHotel){
+  return `<div class="seg" id="segTipo">${Object.entries(TIPOS).map(([k,l]) =>
+    `<button type="button" data-t="${k}" style="--c:var(--tipo)" aria-pressed="${k===atual}"><span class="dot${k==='prospect'?' p':''}" style="${k==='prospect'?'width:16px;height:16px':''}"></span>${l}</button>`).join('')}${comHotel ?
+    `<button type="button" data-t="hotel" style="--c:${LUGAR.hotel.cor}" aria-pressed="false"><span class="lugar mini" style="--c:${LUGAR.hotel.cor};width:20px;height:20px;border-radius:6px">${svgLugar('hotel',12)}</span>Hotel</button>` : ''}</div>`;
+}
+function ligarTipo(){
+  const seg = $('#segTipo'); if(!seg) return;
+  seg.onclick = e => {
+    const b = e.target.closest('button'); if(!b) return;
+    seg.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+    // Hotel não tem responsável nem situação
+    const hotel = b.dataset.t === 'hotel';
+    $('#sheetBody').classList.toggle('eh-hotel', hotel);
+    $('#fTitulo').textContent = hotel ? 'Novo hotel' : 'Novo cliente';
+    $('#fSave').textContent = hotel ? 'Salvar hotel' : 'Salvar cliente';
+    $('#fObs').placeholder = hotel ? 'Ex.: diária R$ 150 com café, tem estacionamento' : 'Ex.: compra às sextas, falar com o gerente';
+  };
+}
+const tipoEscolhido = () => ($('#segTipo [aria-pressed="true"]')||{}).dataset?.t || 'cliente';
+function ligarSeg(){
+  const seg = $('#seg'); if(!seg) return;
+  seg.onclick = e => { const b = e.target.closest('button'); if(!b) return; seg.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b)); };
+}
+const statusEscolhido = (padrao='nao') => ($('#seg [aria-pressed="true"]')||{}).dataset?.s || padrao;
+
+function abrirFormulario(pos, id){
+  const c = id ? clientes.find(x=>x.id===id) : {nome:'',responsavel:'',telefone:'',endereco:'',obs:'',status:'nao',tipo:'prospect',lat:pos.lat,lng:pos.lng};
+  abrirPainel(`
+    <h2 id="fTitulo">${id?'Editar cliente':'Novo cliente'}</h2>
+    <label class="f">Nome
+      <input class="inp" id="fNome" value="${esc(c.nome)}" autocomplete="off" required></label>
+    <label class="f so-cliente">Responsável
+      <input class="inp" id="fResp" value="${esc(c.responsavel)}" autocomplete="off"></label>
+    <label class="f">Telefone / WhatsApp
+      <input class="inp" id="fTel" value="${esc(c.telefone)}" type="tel" inputmode="tel" autocomplete="off"></label>
+    <label class="f">Endereço
+      <input class="inp" id="fEnd" value="${esc(c.endereco)}" autocomplete="off" placeholder="${id?'':'Buscando endereço…'}"></label>
+    <label class="f">Tipo</label>${segTipo(c.tipo||'cliente', !id)}
+    <div class="so-cliente"><label class="f">Situação</label>${segStatus(c.status==='visitado'?'':c.status)}</div>
+    <label class="f">Observações
+      <textarea class="inp" id="fObs" placeholder="Ex.: compra às sextas, falar com o gerente">${esc(c.obs)}</textarea></label>
+    <div class="row" style="margin-top:18px">
+      <button class="btn grow" id="fCancel">Cancelar</button>
+      <button class="btn primary grow" id="fSave">Salvar cliente</button>
+    </div>
+    ${id?'<button class="btn danger block" id="fDel" style="margin-top:12px">Excluir cliente</button>':''}
+  `);
+  ligarSeg(); ligarTipo();
+  if(!id){ map.setView([c.lat,c.lng], Math.max(map.getZoom(),16)); setTimeout(()=>$('#fNome')?.focus(), 260); enderecoAutomatico(c.lat,c.lng); }
+  $('#fCancel').onclick = () => id ? abrirDetalhe(id) : fecharPainel();
+  $('#fSave').onclick = () => {
+    const nome = $('#fNome').value.trim();
+    if(!nome){ $('#fNome').focus(); toast('Coloque pelo menos o nome.'); return; }
+    if(!id && tipoEscolhido()==='hotel'){
+      const hid = uid();
+      hoteis.push({id:hid, nome, telefone:$('#fTel').value.trim(), endereco:$('#fEnd').value.trim(), obs:$('#fObs').value.trim(), lat:c.lat, lng:c.lng, criadoEm:new Date().toISOString()});
+      salvarL(); desenhar(); abrirHotel(hid); toast('Hotel salvo');
+      return;
+    }
+    const dados ={nome, responsavel:$('#fResp').value.trim(), telefone:$('#fTel').value.trim(), endereco:$('#fEnd').value.trim(), obs:$('#fObs').value.trim(), status:statusEscolhido(c.status||'nao'), tipo:tipoEscolhido()};
+    let alvoId = id;
+    if(id) Object.assign(c, dados);
+    else { alvoId = uid(); clientes.push({id:alvoId, ...dados, origem:dados.tipo, lat:c.lat, lng:c.lng, criadoEm:new Date().toISOString(), visitas:[]}); }
+    salvar(); desenhar(); abrirDetalhe(alvoId);
+    toast(id ? 'Alterações salvas' : 'Cliente salvo');
+  };
+  if(id) $('#fDel').onclick = async () => {
+    if(!await confirmar(`Excluir "${c.nome}"? O histórico de visitas também será apagado.`)) return;
+    clientes = clientes.filter(x=>x.id!==id); salvar(); selId=null; fecharPainel(); desenhar(); toast('Cliente excluído');
+  };
+}
+async function enderecoAutomatico(lat,lng){
+  const campo = $('#fEnd');
+  try{
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&accept-language=pt-BR&zoom=18&lat=${lat}&lon=${lng}`);
+    const j = await r.json(); const a = j.address || {};
+    const partes = [[a.road, a.house_number].filter(Boolean).join(', '), a.suburb || a.neighbourhood, a.city || a.town || a.village].filter(Boolean);
+    if(campo && document.body.contains(campo) && !campo.value) campo.value = partes.join(' - ');
+  }catch(e){}
+  if(campo) campo.placeholder = '';
+}
+
+/* ================= Detalhe do cliente ================= */
+function abrirDetalhe(id){
+  const c = clientes.find(x=>x.id===id); if(!c) return;
+  const antigo = selId; selId = id;
+  [antigo,id].forEach(k => { const cc = clientes.find(x=>x.id===k), m = marcadores.get(k); if(cc && m) m.setIcon(iconeDe(cc)); });
+  const s = STATUS[c.status]||STATUS.nao;
+  const ult = ultimaVisita(c), d = diasDesde(ult);
+  const tel = (c.telefone||'').replace(/\D/g,'');
+  const wa = tel ? (tel.length<=11 ? '55'+tel : tel) : '';
+  const visitas = [...(c.visitas||[])].sort((a,b)=> b.data.localeCompare(a.data));
+  const dist = fmtDist(distKm(c));
+  abrirPainel(`
+    <span class="status" style="--c:${s.cor}"><span class="dot"></span>${c.status==='visitado'?'Visitado (revisar)':s.label}</span>${ehP(c)?'<span class="tag">P Prospecção</span>':''}
+    <h2>${esc(c.nome)}</h2>
+    <div class="facts">
+      ${c.responsavel?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>${esc(c.responsavel)}</span></div>`:''}
+      ${c.endereco?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-7.2 7-12a7 7 0 0 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg><span>${esc(c.endereco)}${dist?` <span class="muted">(${dist} de você)</span>`:''}</span></div>`:''}
+      ${c.obs?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v12l-4 4H5z"/><path d="M9 9h6M9 13h4"/></svg><span style="white-space:pre-wrap">${esc(c.obs)}</span></div>`:''}
+    </div>
+    <div class="lastvisit"><b>${textoDias(d)}</b>${ult?` <span class="muted">em ${fmtData(ult)}</span>`:''}</div>
+    <button class="btn primary block" id="dVisita">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>Registrar visita</button>
+    ${(()=>{ const r = rotaHoje(false); const i = r ? r.paradas.indexOf(c.id) : -1;
+      return `<button class="btn block" id="dRota" style="margin-top:8px">${i>=0?`Parada ${i+1} da rota de hoje (tirar)`:'Incluir na rota de hoje'}</button>`; })()}
+    <div class="row" style="margin-top:8px">
+      ${tel?`<a class="btn grow" href="tel:${tel}">Ligar</a><a class="btn grow" href="https://wa.me/${wa}" target="_blank" rel="noopener">WhatsApp</a>`:''}
+      <a class="btn grow" href="https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}" target="_blank" rel="noopener">Google Maps</a>
+      <a class="btn grow" href="https://waze.com/ul?ll=${c.lat},${c.lng}&navigate=yes" target="_blank" rel="noopener">Waze</a>
+    </div>
+    <h3>Mudar situação</h3>
+    ${segStatus(c.status)}
+    <h3>Histórico de visitas</h3>
+    ${visitas.length ? `<ul class="hist">${visitas.map(v=>`<li><span class="when">${fmtData(v.data)}</span><span class="what">${v.resultado&&STATUS[v.resultado]?`<span class="res" style="--c:${STATUS[v.resultado].cor}"><span class="dot"></span>${STATUS[v.resultado].label}</span>\n`:''}${v.nota?esc(v.nota):'<span class="muted">Sem anotação</span>'}</span><button class="x" data-v="${esc(v.data)}" aria-label="Apagar esta visita">×</button></li>`).join('')}</ul>`
+      : '<p class="muted" style="margin:0">Nenhuma visita registrada ainda.</p>'}
+    <div class="row" style="margin-top:20px">
+      <button class="btn grow" id="dEditar">Editar dados</button>
+      <button class="btn grow" id="dFechar">Fechar</button>
+    </div>
+  `);
+  seguirMinhaPos(false);
+  if(map.getZoom()<15) map.setView([c.lat,c.lng],16); else map.panTo([c.lat,c.lng]);
+  $('#seg').onclick = e => {
+    const b = e.target.closest('button'); if(!b || b.dataset.s===c.status) return;
+    c.status = b.dataset.s; const virou = converter(c); salvar(); desenhar(); abrirDetalhe(id);
+    toast(virou ? 'Comprou! Agora é cliente da carteira' : 'Situação: '+STATUS[c.status].label);
+  };
+  $('#dVisita').onclick = () => formVisita(id);
+  $('#dRota').onclick = () => { const dentro = alternarNaRota(id); abrirDetalhe(id); toast(dentro ? 'Incluído na rota de hoje' : 'Retirado da rota de hoje'); };
+  $('#dEditar').onclick = () => abrirFormulario(null, id);
+  $('#dFechar').onclick = fecharPainel;
+  document.querySelectorAll('.hist .x').forEach(b => b.onclick = async () => {
+    if(!await confirmar('Apagar esta visita do histórico?')) return;
+    c.visitas = c.visitas.filter(v=>v.data!==b.dataset.v); salvar(); desenhar(); abrirDetalhe(id);
+  });
+}
+
+// Prospecção que comprou vira cliente da carteira (a origem fica registrada)
+function converter(c){
+  if(c.status==='comprou' && ehP(c)){ c.tipo='cliente'; c.convertidoEm=new Date().toISOString(); return true; }
+  return false;
+}
+
+function formVisita(id){
+  const c = clientes.find(x=>x.id===id);
+  const hoje = new Date(); const iso = new Date(hoje.getTime()-hoje.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  abrirPainel(`
+    <h2>Visita em ${esc(c.nome)}</h2>
+    <label class="f">Resultado</label>${segStatus('', RESULTADOS)}
+    <label class="f">Data
+      <input class="inp" id="vData" type="date" value="${iso}" max="${iso}"></label>
+    <label class="f">Anotação
+      <textarea class="inp" id="vNota" placeholder="Ex.: achou o preço alto, voltar quando chegar a promoção"></textarea></label>
+    <div class="row" style="margin-top:18px">
+      <button class="btn grow" id="vCancel">Voltar</button>
+      <button class="btn primary grow" id="vSave">Salvar visita</button>
+    </div>
+  `);
+  ligarSeg();
+  $('#vCancel').onclick = () => abrirDetalhe(id);
+  $('#vSave').onclick = () => {
+    const res = statusEscolhido('');
+    if(!res){ toast('Escolha o resultado da visita'); return; }
+    const dia = $('#vData').value || iso;
+    const dataIso = dia===iso ? new Date().toISOString() : new Date(dia+'T12:00:00').toISOString();
+    c.visitas = c.visitas || [];
+    c.visitas.push({data:dataIso, resultado:res, nota:$('#vNota').value.trim()});
+    c.status = res;
+    marcarFeita(id);
+    const virou = converter(c);
+    salvar(); desenhar(); abrirDetalhe(id);
+    toast(virou ? 'Comprou! Agora é cliente da carteira' : 'Visita registrada');
+  };
+}
+
+// Clientes marcados como "Visitado" na versão anterior: decidir se compraram ou não
+function revisarLegado(){
+  const lista = clientes.filter(c=>c.status==='visitado');
+  if(!lista.length){ fecharPainel(); desenhar(); return; }
+  abrirPainel(`
+    <h2>Revisar visitados</h2>
+    <p class="muted" style="margin:0 0 10px;line-height:1.45">A situação "Visitado" foi separada em "Comprou" e "Não comprou". Marque cada um:</p>
+    <ul class="list">${lista.map(c=>`<li style="padding:10px 0;border-top:1px solid var(--line)">
+      <div class="nm" style="font-weight:600;margin-bottom:8px">${esc(c.nome)}</div>
+      <div class="row"><button class="btn grow" data-r="${c.id}" data-s="comprou">Comprou</button><button class="btn grow" data-r="${c.id}" data-s="nao_comprou">Não comprou</button></div></li>`).join('')}</ul>
+  `);
+  document.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
+    const c = clientes.find(x=>x.id===b.dataset.r); c.status = b.dataset.s; converter(c);
+    salvar(); desenhar(); revisarLegado();
+  });
+}
+
+/* ================= Lista ================= */
+$('#listBtn').onclick = abrirLista;
+function abrirLista(){
+  if(filtro === 'lugares'){
+    abrirPainel(`<h2>Lugares</h2>${htmlListaLugares() || '<div class="empty">Nenhum hotel ou casa salvo ainda. Toque no + e escolha Hotel ou Minha casa.</div>'}`);
+    return;
+  }
+  const lista = clientes.filter(passaFiltro).map(c => ({c, d:diasDesde(ultimaVisita(c)), km:distKm(c)}));
+  lista.sort((a,b) => {
+    if(minhaPos) return a.km - b.km;
+    const da = a.d===null ? Infinity : a.d, db = b.d===null ? Infinity : b.d;
+    return db - da;
+  });
+  const titulo = filtro==='todos' ? 'Clientes' : filtro==='atraso' ? `${DIAS_ATRASO}+ dias sem visita` : filtro==='prospect' ? 'Prospecção' : STATUS[filtro].label;
+  abrirPainel(`
+    <h2>${titulo} <span class="muted" style="font-weight:600">(${lista.length})</span></h2>
+    <p class="muted" style="margin:0 0 8px;font-size:14px">${minhaPos?'Ordenados pelos mais próximos de você.':'Ordenados por quem está há mais tempo sem visita. Toque em ◎ para ordenar por distância.'}</p>
+    ${lista.length ? `<ul class="list">${lista.map(({c,d,km}) => `<li><button data-id="${c.id}"><span class="dot${ehP(c)?' p':''}" style="--c:${(STATUS[c.status]||STATUS.nao).cor}"></span><span><span class="nm">${esc(c.nome)}</span><span class="sub">${(STATUS[c.status]||STATUS.nao).label}, ${textoDias(d).toLowerCase()}</span></span><span class="dist">${fmtDist(km)}</span></button></li>`).join('')}</ul>`
+      : `<div class="empty">Nenhum cliente neste filtro.</div>`}
+    ${htmlListaLugares()}
+  `);
+  document.querySelectorAll('.list button[data-id]:not([data-l])').forEach(b => b.onclick = () => abrirDetalhe(b.dataset.id));
+}
+
+/* ================= Menu ================= */
+$('#menuBtn').onclick = () => {
+  const mes = new Date(); mes.setDate(1); mes.setHours(0,0,0,0);
+  const visMes = clientes.reduce((n,c)=> n + (c.visitas||[]).filter(v=>new Date(v.data)>=mes).length, 0);
+  abrirPainel(`
+    <h2>Mapa de Clientes</h2>
+    <div class="summary">
+      <div><b>${clientes.length}</b><span>clientes</span></div>
+      <div><b>${visMes}</b><span>visitas no mês</span></div>
+      <div><b>${clientes.filter(ehP).length}</b><span>em prospecção</span></div>
+    </div>
+    ${htmlNuvem()}
+    ${precisaBackup() && !nuvem.usuario ? `<div class="aviso"><b>${textoBackup()}</b> Salve um agora para não perder seus clientes se o celular der problema.<button class="btn primary block" id="mBackup2" style="margin-top:10px">Salvar backup agora</button></div>` : ''}
+    <h3>Aparência</h3>
+    <div class="tema" role="group" aria-label="Tema">
+      ${[['auto','Automático'],['claro','Claro'],['escuro','Escuro']].map(([k,l]) => `<button data-tema="${k}" aria-pressed="${prefTema()===k}">${l}</button>`).join('')}
+    </div>
+    <h3>Dados</h3>
+    <button class="menuitem" id="mImport"><span class="ic">${ICO.importar}</span><span>Importar do My Maps<small>Arquivo KML ou KMZ exportado do Google My Maps</small></span></button>
+    <button class="menuitem" id="mExportKml"><span class="ic">${ICO.exportar}</span><span>Exportar para o My Maps<small>Gera um KML com todos os clientes e cores</small></span></button>
+    <button class="menuitem" id="mBackup"><span class="ic">${ICO.salvar}</span><span>Salvar backup<small>Baixa um arquivo com clientes, visitas, rotas e viagens</small></span></button>
+    <button class="menuitem" id="mRestore"><span class="ic">${ICO.restaurar}</span><span>Restaurar backup<small>Carrega um arquivo de backup salvo antes</small></span></button>
+    <p class="muted" style="font-size:13px;margin:14px 0 0;line-height:1.45">Os dados ficam guardados neste aparelho, neste navegador. Salve um backup de vez em quando para não perder nada se limpar o navegador ou trocar de celular.</p>
+    ${(()=>{ const u = usoMemoria(); return `<div class="memoria${u>=.7?' alta':''}"><span>Memória do app: ${Math.max(1,Math.round(u*100))}% usada</span><div class="barra"><i style="width:${Math.min(100,Math.max(1,u*100))}%"></i></div><span style="display:block;margin-top:8px">Dados guardados para o endereço: <b>${esc(location.host || 'arquivo local')}</b></span></div>`; })()}
+  `);
+  if($('#mBackup2')) $('#mBackup2').onclick = () => { exportarBackup(); $('#menuBtn').click(); };
+  document.querySelectorAll('.tema button').forEach(b => b.onclick = () => {
+    definirTema(b.dataset.tema);
+    document.querySelectorAll('.tema button').forEach(x => x.setAttribute('aria-pressed', x===b));
+  });
+  $('#mImport').onclick = () => $('#fileKml').click();
+  $('#mExportKml').onclick = exportarKML;
+  $('#mBackup').onclick = exportarBackup;
+  $('#mRestore').onclick = () => $('#fileJson').click();
+};
+
+function baixar(nome, conteudo, tipo){
+  const url = URL.createObjectURL(new Blob([conteudo], {type:tipo}));
+  const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+const hojeArq = () => hojeKey(); // data local (toISOString é UTC e virava o dia às 21h)
+function exportarBackup(){
+  baixar(`clientes-backup-${hojeArq()}.json`, JSON.stringify({versao:3, clientes, hoteis, rotas:{...R, viagemAtiva:null}}, null, 1), 'application/json');
+  try{ localStorage.setItem(KEY_BACKUP, new Date().toISOString()); }catch(e){}
+  toast('Backup salvo nos downloads');
+}
+
+/* ---------- Lembrete de backup ---------- */
+const KEY_BACKUP = 'mapaClientes.ultimoBackup';
+const DIAS_BACKUP = 7;
+function diasSemBackup(){
+  try{ const v = localStorage.getItem(KEY_BACKUP); return v ? diasDesde(v) : null; }catch(e){ return null; }
+}
+const precisaBackup = () => clientes.length > 0 && (diasSemBackup() === null || diasSemBackup() >= DIAS_BACKUP);
+function textoBackup(){
+  const d = diasSemBackup();
+  return d === null ? 'Você ainda não salvou nenhum backup.' : `Último backup há ${d} dia${d===1?'':'s'}.`;
+}
+// Na abertura do app, avisa no máximo uma vez por dia
+function lembrarBackup(){
+  if(!precisaBackup()) return;
+  try{ if(localStorage.getItem('mapaClientes.avisoBackup') === hojeKey()) return; localStorage.setItem('mapaClientes.avisoBackup', hojeKey()); }catch(e){ return; }
+  setTimeout(() => toast(textoBackup() + ' Salve um pelo menu.'), 1500);
+}
+
+/* ---------- Uso da memória do navegador ---------- */
+// O navegador reserva uns 5 milhões de caracteres para o app
+const LIMITE_MEMORIA = 5e6;
+function usoMemoria(){
+  let t = 0;
+  try{ for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); if(k.startsWith('mapaClientes')) t += k.length + (localStorage.getItem(k)||'').length; } }catch(e){}
+  return t / LIMITE_MEMORIA;
+}
+function avisarMemoria(){
+  const u = usoMemoria();
+  if(u >= .7) setTimeout(() => toast(`Memória do app ${Math.round(u*100)}% cheia. Salve um backup e apague viagens antigas.`), 3500);
+}
+
+function exportarKML(){
+  const x = s => esc(s);
+  const estilos = Object.entries(STATUS).map(([k,s]) => {
+    const hex = s.cor.slice(1); const abgr = 'ff'+hex.slice(4,6)+hex.slice(2,4)+hex.slice(0,2);
+    return `<Style id="st-${k}"><IconStyle><color>${abgr}</color><Icon><href>https://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href></Icon></IconStyle></Style>`;
+  }).join('');
+  const pastas = Object.entries(STATUS).map(([k,s]) => {
+    const itens = clientes.filter(c=>(STATUS[c.status]?c.status:'nao')===k); if(!itens.length) return '';
+    return `<Folder><name>${x(s.label)}</name>${itens.map(c => {
+      const ult = ultimaVisita(c);
+      const desc = [ehP(c)&&'Tipo: Prospecção', c.responsavel&&'Responsável: '+c.responsavel, c.telefone&&'Telefone: '+c.telefone, c.endereco&&'Endereço: '+c.endereco, ult&&'Última visita: '+fmtData(ult), c.obs].filter(Boolean).join('\n');
+      return `<Placemark><name>${ehP(c)?'(P) ':''}${x(c.nome)}</name><description>${x(desc)}</description><styleUrl>#st-${k}</styleUrl><Point><coordinates>${c.lng},${c.lat},0</coordinates></Point></Placemark>`;
+    }).join('')}</Folder>`;
+  }).join('');
+  // Hotéis e casa numa pasta separada, com os ícones do próprio Google
+  const lugares = [
+    ...hoteis.map(h => `<Placemark><name>${x(h.nome)}</name><description>${x([h.telefone&&'Telefone: '+h.telefone, h.endereco&&'Endereço: '+h.endereco, h.obs].filter(Boolean).join('\n'))}</description><styleUrl>#st-hotel</styleUrl><Point><coordinates>${h.lng},${h.lat},0</coordinates></Point></Placemark>`),
+    ...(R.casa ? [`<Placemark><name>Minha casa</name><styleUrl>#st-casa</styleUrl><Point><coordinates>${R.casa.lng},${R.casa.lat},0</coordinates></Point></Placemark>`] : [])
+  ];
+  const estLugares = `<Style id="st-hotel"><IconStyle><Icon><href>https://maps.google.com/mapfiles/kml/shapes/lodging.png</href></Icon></IconStyle></Style><Style id="st-casa"><IconStyle><Icon><href>https://maps.google.com/mapfiles/kml/shapes/homegardenbusiness.png</href></Icon></IconStyle></Style>`;
+  const pastaLugares = lugares.length ? `<Folder><name>Lugares</name>${lugares.join('')}</Folder>` : '';
+  baixar(`clientes-${hojeArq()}.kml`, `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Clientes</name>${estilos}${estLugares}${pastas}${pastaLugares}</Document></kml>`, 'application/vnd.google-earth.kml+xml');
+  toast('KML salvo nos downloads');
+}
+
+/* ================= Importar KML / KMZ ================= */
+$('#fileKml').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value=''; if(!f) return;
+  toast('Lendo o arquivo…');
+  let texto;
+  try{
+    const buf = await f.arrayBuffer();
+    const bytes = new Uint8Array(buf.slice(0,4));
+    const ehZip = bytes[0]===0x50 && bytes[1]===0x4B; // KMZ é um arquivo compactado
+    if(ehZip){
+      if(typeof JSZip === 'undefined') throw new Error('O leitor de KMZ não carregou. Verifique a internet ou exporte como KML.');
+      const zip = await JSZip.loadAsync(buf);
+      const kmls = Object.values(zip.files).filter(z => !z.dir && /\.kml$/i.test(z.name));
+      if(!kmls.length) throw new Error('O arquivo KMZ não tem nenhum KML dentro.');
+      texto = await (kmls.find(z=>/(^|\/)doc\.kml$/i.test(z.name)) || kmls[0]).async('string');
+    } else {
+      texto = new TextDecoder('utf-8').decode(buf);
+    }
+  }catch(err){ mostrarResultado({erro: err.message || 'Não consegui abrir o arquivo.', arquivo:f.name}); return; }
+  try{ mostrarResultado({...importarKML(texto), arquivo:f.name}); }
+  catch(err){ mostrarResultado({erro: err.message || String(err), arquivo:f.name}); }
+});
+
+// DOMParser cria um documento inerte: scripts e onerror de imagens do KML não rodam
+function limparHtml(s){
+  const d = new DOMParser().parseFromString(String(s||'').replace(/<br\s*\/?>/gi,'\n'), 'text/html');
+  return (d.body.textContent || '').trim();
+}
+// Busca elementos pelo nome sem depender de namespace (kml:Placemark, Placemark, etc.)
+function todos(raiz, nome){ return [...raiz.getElementsByTagName('*')].filter(el => el.localName === nome); }
+function primeiro(raiz, nome){ return todos(raiz, nome)[0]; }
+function filhoDireto(raiz, nome){ return [...raiz.children].find(el => el.localName === nome); }
+
+function importarKML(texto){
+  texto = texto.replace(/^\uFEFF/, '').trim();
+  if(!/<(\w+:)?(kml|Placemark|NetworkLink)\b/i.test(texto))
+    throw new Error('Esse arquivo não parece ser um KML. No My Maps use "Exportar para KML/KMZ".');
+  let doc = new DOMParser().parseFromString(texto, 'application/xml');
+  if(doc.getElementsByTagName('parsererror').length){
+    // XML com algum defeito: tenta uma leitura mais tolerante
+    doc = new DOMParser().parseFromString(texto, 'text/html');
+  }
+  const low = n => n.toLowerCase();
+  const achar = (r,n) => { const t = todos(r,n); return t.length ? t : todos(r, low(n)); };
+  const um = (r,n) => achar(r,n)[0];
+
+  const pms = achar(doc, 'Placemark');
+  const links = achar(doc, 'NetworkLink');
+  let novos = 0, repetidos = 0, semPonto = 0, lugares = 0;
+  pms.forEach(pm => {
+    const pt = um(pm, 'Point');
+    const coord = pt && um(pt, 'coordinates');
+    if(!coord){ semPonto++; return; }
+    const [lng,lat] = coord.textContent.trim().split(/[\s,]+/).map(Number);
+    if(!isFinite(lat) || !isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180){ semPonto++; return; }
+    const nomeEl = [...pm.children].find(el => low(el.localName)==='name');
+    const nome = (nomeEl?.textContent || 'Sem nome').trim() || 'Sem nome';
+    // Hotel e casa exportados por este app voltam como lugares, não como clientes
+    const estilo = (um(pm,'styleUrl')?.textContent || '').trim();
+    if(estilo === '#st-casa'){ if(!R.casa){ R.casa = {lat, lng}; salvarR(); } lugares++; return; }
+    if(estilo === '#st-hotel'){
+      if(!hoteis.some(h => h.nome===nome && Math.abs(h.lat-lat)<1e-6 && Math.abs(h.lng-lng)<1e-6)){
+        const desc = limparHtml([...pm.children].find(el => low(el.localName)==='description')?.textContent).split('\n');
+        const campo = p => (desc.find(l => l.startsWith(p)) || '').slice(p.length).trim();
+        hoteis.push({id:uid(), nome, telefone:campo('Telefone: '), endereco:campo('Endereço: '), obs:desc.filter(l => !/^(Telefone|Endereço): /.test(l)).join('\n').trim(), lat, lng, criadoEm:new Date().toISOString()});
+        salvarL();
+      }
+      lugares++; return;
+    }
+    if(clientes.some(c => c.nome===nome && Math.abs(c.lat-lat)<1e-6 && Math.abs(c.lng-lng)<1e-6)){ repetidos++; return; }
+    const extras = achar(pm, 'Data').map(d => {
+      const v = um(d,'value')?.textContent?.trim();
+      return v ? `${d.getAttribute('name')}: ${v}` : '';
+    }).filter(Boolean);
+    const descEl = [...pm.children].find(el => low(el.localName)==='description');
+    let desc = limparHtml(descEl?.textContent);
+    if(extras.length && extras.every(x => desc.includes(x.split(': ').slice(1).join(': ')))) desc = '';
+    const pai = pm.parentElement;
+    const pastaEl = pai && low(pai.localName)==='folder' ? [...pai.children].find(el => low(el.localName)==='name') : null;
+    const pasta = pastaEl?.textContent?.trim() || '';
+    const tel = extras.find(x => /telefone|fone|celular|whats/i.test(x));
+    const end = extras.find(x => /endere|rua|logradouro/i.test(x));
+    clientes.push({
+      id:uid(), nome, responsavel:'',
+      telefone: tel ? tel.split(': ').slice(1).join(': ') : '',
+      endereco: end ? end.split(': ').slice(1).join(': ') : '',
+      obs: [pasta && 'Camada no My Maps: '+pasta, desc, ...extras.filter(x=>x!==tel && x!==end)].filter(Boolean).join('\n'),
+      status:'nao', tipo:'cliente', lat, lng, criadoEm:new Date().toISOString(), visitas:[]
+    });
+    novos++;
+  });
+  salvar(); filtro='todos'; busca=''; $('#q').value=''; $('#searchBox').classList.remove('has');
+  desenhar();
+  if(novos) enquadrar(clientes);
+  return {novos, repetidos, semPonto, lugares, total:pms.length, linkRede: links.length>0 && !pms.length};
+}
+
+function mostrarResultado(r){
+  $('#toast').classList.remove('show');
+  let corpo;
+  if(r.erro){
+    corpo = `<h2>Não foi possível importar</h2><p style="line-height:1.45">${esc(r.erro)}</p>`;
+  } else if(r.linkRede){
+    corpo = `<h2>Esse arquivo é só um link</h2>
+      <p style="line-height:1.45">Ele foi exportado com a opção de link de rede, então não traz os pontos dentro dele.</p>
+      <p style="line-height:1.45">Exporte de novo no My Maps: menu ⋮ ao lado do nome do mapa, "Exportar para KML/KMZ", <b>desmarque</b> "Manter os dados atualizados com link de rede KML" e <b>marque</b> "Exportar para um arquivo .KML".</p>`;
+  } else if(!r.total){
+    corpo = `<h2>Nenhum ponto encontrado</h2><p style="line-height:1.45">O arquivo abriu, mas não tem marcadores dentro. Confira se escolheu o mapa certo no My Maps e se a opção "Todo o mapa" estava selecionada na exportação.</p>`;
+  } else {
+    const partes = [];
+    if(r.repetidos) partes.push(`${r.repetidos} já estava${r.repetidos===1?'':'m'} no mapa`);
+    if(r.lugares) partes.push(`${r.lugares} ${r.lugares===1?'era hotel ou casa e entrou':'eram hotéis ou casa e entraram'} como lugar`);
+    if(r.semPonto) partes.push(`${r.semPonto} ${r.semPonto===1?'era linha ou área':'eram linhas ou áreas'} e ${r.semPonto===1?'foi ignorada':'foram ignoradas'}`);
+    corpo = `<h2>${r.novos} cliente${r.novos===1?'':'s'} importado${r.novos===1?'':'s'}</h2>
+      <p class="muted" style="line-height:1.45">${r.total} marcador${r.total===1?'':'es'} no arquivo${partes.length?'. '+partes.join('; '):''}.</p>
+      <p style="line-height:1.45">Todos entram como "Não visitado". Toque em cada um para registrar visitas e mudar a situação.</p>`;
+  }
+  abrirPainel(corpo + `<p class="muted" style="font-size:13px;margin-top:14px">Arquivo: ${esc(r.arquivo||'')}</p>
+    <button class="btn primary block" id="rOk" style="margin-top:8px">Ver no mapa</button>`);
+  $('#rOk').onclick = fecharPainel;
+}
+
+/* ================= Restaurar backup ================= */
+$('#fileJson').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value=''; if(!f) return;
+  try{
+    const j = JSON.parse(await f.text());
+    const lista = Array.isArray(j) ? j : j.clientes;
+    if(!Array.isArray(lista)) throw 0;
+    if(clientes.length && !await confirmar(`Substituir os ${clientes.length} clientes atuais pelos ${lista.length} do backup?${nuvem.usuario ? '\n\nVocê está conectado à nuvem: ela também vai ficar igual a este backup.' : ''}`)) return;
+    clientes = lista.filter(c => c && isFinite(c.lat) && isFinite(c.lng) && c.nome).map(c => migrar({visitas:[], status:'nao', ...c}));
+    if(j.rotas && typeof j.rotas==='object'){ R = Object.assign(baseR(), j.rotas, {viagemAtiva:R.viagemAtiva}); salvarR(); }
+    if(Array.isArray(j.hoteis)){ hoteis = j.hoteis.filter(h => h && isFinite(h.lat) && isFinite(h.lng) && h.nome); salvarL(); }
+    salvar(); filtro='todos'; desenhar(); fecharPainel(); enquadrar(clientes);
+    toast(`${clientes.length} clientes restaurados`);
+  }catch(err){ toast('Esse arquivo não é um backup válido.'); }
+});
+
+/* ================= Camadas ================= */
+$('#layerBtn').onclick = () => {
+  const sat = map.hasLayer(camadaSat);
+  if(sat){ map.removeLayer(camadaSat); camadaLimpa.addTo(map); toast('Mapa limpo'); }
+  else { map.removeLayer(camadaLimpa); camadaSat.addTo(map); toast('Satélite'); }
+  $('#layerBtn').classList.toggle('on', !sat);
+};
+
+/* ================= Lugares: hotéis e minha casa ================= */
+// Ficam fora dos clientes: não entram em filtros, contagens nem rota do dia. Aparecem com ícone em vez de bolinha.
+const KEY_L = 'mapaClientes.hoteis.v1';
+let hoteis = (() => { try{ const v = JSON.parse(VISTO[KEY_L] = localStorage.getItem(KEY_L)); return Array.isArray(v) ? v : []; }catch(e){ return []; } })();
+function salvarL(){
+  try{ const s = JSON.stringify(hoteis); localStorage.setItem(KEY_L, s); VISTO[KEY_L] = s; }
+  catch(e){ toast('Não consegui salvar neste navegador. Faça um backup pelo menu.'); }
+  agendarEnvio(); // nuvem
+}
+const LUGAR = {
+  hotel:{cor:'#DB2777', rotulo:'Hotel', svg:'<path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8"/><path d="M4 10V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M12 4v6"/><path d="M2 18h20"/>'},
+  casa: {cor:'#14283B', rotulo:'Minha casa', svg:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>'}
+};
+const svgLugar = (tipo, tam=18, cor='#fff') => `<svg width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="${cor}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${LUGAR[tipo].svg}</svg>`;
+function iconeLugar(tipo, nome){
+  const cor = LUGAR[tipo].cor;
+  // Ícone de 24 reduzido para 15 px e centralizado na cabeça da gota (centro em 16,16)
+  const miolo = `<g transform="translate(8.5 8.5) scale(.625)" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${LUGAR[tipo].svg}</g>`;
+  return L.divIcon({className:'', iconSize:[32,43], iconAnchor:[16,42],
+    html:`<div class="pin grande" style="--c:${cor}">${svgGota(cor, miolo, true)}<span class="lbl">${esc(nome)}</span></div>`});
+}
+const camadaLugares = L.layerGroup().addTo(map);
+const hotelNaBusca = h => !busca || normal(h.nome+' '+(h.endereco||'')+' '+(h.obs||'')).includes(busca);
+
+function desenharLugares(){
+  camadaLugares.clearLayers();
+  hoteis.filter(hotelNaBusca).forEach(h => {
+    L.marker([h.lat,h.lng], {icon:iconeLugar('hotel', h.nome), title:h.nome, zIndexOffset:500})
+      .on('click', () => cliqueLugar(h, () => abrirHotel(h.id))).addTo(camadaLugares);
+  });
+  if(R.casa){
+    L.marker([R.casa.lat,R.casa.lng], {icon:iconeLugar('casa', 'Minha casa'), title:'Minha casa', zIndexOffset:500})
+      .on('click', () => cliqueLugar(R.casa, abrirCasa)).addTo(camadaLugares);
+  }
+}
+function cliqueLugar(p, abrir){
+  if(desenho){ addMarco(p.lat, p.lng); return; }          // desenhando rota: vira ponto da rota
+  if(modoSelecao){ toast('Na rota de visitas entram só clientes.'); return; }
+  abrir();
+}
+function irAte(p){
+  seguirMinhaPos(false);
+  if(map.getZoom() < 15) map.setView([p.lat,p.lng], 16); else map.panTo([p.lat,p.lng]);
+}
+const botoesNavegar = p => `<a class="btn grow" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">Google Maps</a>
+  <a class="btn grow" href="https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes" target="_blank" rel="noopener">Waze</a>`;
+const fatoSvg = d => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${d}</svg>`;
+
+/* ---------- Hotel ---------- */
+function abrirHotel(id){
+  const h = hoteis.find(x=>x.id===id); if(!h) return;
+  const tel = (h.telefone||'').replace(/\D/g,''), wa = tel ? (tel.length<=11 ? '55'+tel : tel) : '';
+  const d = fmtDist(distKm(h));
+  irAte(h);
+  abrirPainel(`
+    <span class="status" style="--c:${LUGAR.hotel.cor}">${svgLugar('hotel',15,LUGAR.hotel.cor)}Hotel</span>
+    <h2>${esc(h.nome)}</h2>
+    <div class="facts">
+      ${h.endereco||d?`<div class="fact">${fatoSvg('<path d="M12 21s7-7.2 7-12a7 7 0 0 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/>')}<span>${esc(h.endereco||'')}${d?` <span class="muted">(${d} de você)</span>`:''}</span></div>`:''}
+      ${h.telefone?`<div class="fact">${fatoSvg('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z"/>')}<span>${esc(h.telefone)}</span></div>`:''}
+      ${h.obs?`<div class="fact">${fatoSvg('<path d="M5 4h14v12l-4 4H5z"/><path d="M9 9h6M9 13h4"/>')}<span style="white-space:pre-wrap">${esc(h.obs)}</span></div>`:''}
+    </div>
+    <div class="row" style="margin-top:14px">
+      ${tel?`<a class="btn grow" href="tel:${tel}">Ligar</a><a class="btn grow" href="https://wa.me/${wa}" target="_blank" rel="noopener">WhatsApp</a>`:''}
+      ${botoesNavegar(h)}
+    </div>
+    <div class="row" style="margin-top:20px">
+      <button class="btn grow" data-l="editarHotel" data-id="${esc(h.id)}">Editar dados</button>
+      <button class="btn grow" data-l="fechar">Fechar</button>
+    </div>`);
+}
+function abrirFormHotel(pos, id){
+  const h = id ? hoteis.find(x=>x.id===id) : {nome:'', telefone:'', endereco:'', obs:'', lat:pos.lat, lng:pos.lng};
+  abrirPainel(`
+    <h2>${id?'Editar hotel':'Novo hotel'}</h2>
+    <label class="f">Nome do hotel<input class="inp" id="fNome" value="${esc(h.nome)}" autocomplete="off"></label>
+    <label class="f">Telefone / WhatsApp<input class="inp" id="fTel" value="${esc(h.telefone)}" type="tel" inputmode="tel" autocomplete="off"></label>
+    <label class="f">Endereço<input class="inp" id="fEnd" value="${esc(h.endereco)}" autocomplete="off" placeholder="${id?'':'Buscando endereço…'}"></label>
+    <label class="f">Observações<textarea class="inp" id="fObs" placeholder="Ex.: diária R$ 150 com café, tem estacionamento">${esc(h.obs)}</textarea></label>
+    <div class="row" style="margin-top:18px">
+      <button class="btn grow" data-l="${id?'verHotel':'fechar'}" data-id="${esc(id||'')}">Cancelar</button>
+      <button class="btn primary grow" data-l="salvarHotel" data-id="${esc(id||'')}" data-lat="${h.lat}" data-lng="${h.lng}">Salvar hotel</button>
+    </div>
+    ${id?`<button class="btn danger block" data-l="excluirHotel" data-id="${esc(id)}" style="margin-top:12px">Excluir hotel</button>`:''}`);
+  if(!id){ irAte(h); setTimeout(()=>$('#fNome')?.focus(), 260); enderecoAutomatico(h.lat, h.lng); }
+}
+function salvarHotel(b){
+  const nome = $('#fNome').value.trim();
+  if(!nome){ $('#fNome').focus(); toast('Coloque o nome do hotel.'); return; }
+  const dados = {nome, telefone:$('#fTel').value.trim(), endereco:$('#fEnd').value.trim(), obs:$('#fObs').value.trim()};
+  let id = b.dataset.id;
+  if(id) Object.assign(hoteis.find(x=>x.id===id), dados);
+  else { id = uid(); hoteis.push({id, ...dados, lat:+b.dataset.lat, lng:+b.dataset.lng, criadoEm:new Date().toISOString()}); }
+  salvarL(); desenharLugares(); abrirHotel(id);
+  toast(b.dataset.id ? 'Alterações salvas' : 'Hotel salvo');
+}
+
+/* ---------- Minha casa ---------- */
+function definirCasa(pos){
+  R.casa = {lat:pos.lat, lng:pos.lng}; salvarR();
+  desenharLugares(); desenharRota(); abrirCasa();
+  toast('Casa marcada');
+}
+function abrirCasa(){
+  if(!R.casa) return;
+  const d = fmtDist(distKm(R.casa));
+  irAte(R.casa);
+  abrirPainel(`
+    <span class="status" style="--c:#5A6B7E">${svgLugar('casa',15,'currentColor')}Minha casa</span>
+    <h2>Minha casa</h2>
+    ${d?`<p class="muted" style="margin:0 0 4px">${d} de você</p>`:''}
+    <p class="muted" style="font-size:14px;line-height:1.45;margin:8px 0 14px">Quando o GPS está desligado, a rota de visitas começa a partir daqui.</p>
+    <div class="row">${botoesNavegar(R.casa)}</div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn grow" data-l="mudarCasa">Mudar local</button>
+      <button class="btn danger grow" data-l="tirarCasa">Tirar do mapa</button>
+    </div>
+    <button class="btn block" data-l="fechar" style="margin-top:8px">Fechar</button>`);
+}
+
+/* ---------- Lista ---------- */
+function htmlListaLugares(){
+  if((filtro!=='todos' && filtro!=='lugares') || (!hoteis.length && !R.casa)) return '';
+  const itens = [
+    ...(R.casa ? [{tipo:'casa', nome:'Minha casa', p:R.casa, acao:'verCasa', id:''}] : []),
+    ...hoteis.filter(hotelNaBusca).map(h => ({tipo:'hotel', nome:h.nome, p:h, acao:'verHotel', id:h.id, sub:h.endereco}))
+  ].map(x => ({...x, km:distKm(x.p)}));
+  if(minhaPos) itens.sort((a,b) => a.km - b.km);
+  if(!itens.length) return '';
+  return `${filtro==='lugares'?'':'<h3>Lugares</h3>'}<ul class="list">${itens.map(x => `<li><button data-l="${x.acao}" data-id="${esc(x.id)}"><span class="lugar mini" style="--c:${LUGAR[x.tipo].cor}">${svgLugar(x.tipo,13)}</span><span><span class="nm">${esc(x.nome)}</span><span class="sub">${x.sub?esc(x.sub):LUGAR[x.tipo].rotulo}</span></span><span class="dist">${fmtDist(x.km)}</span></button></li>`).join('')}</ul>`;
+}
+
+/* ---------- Cliques ---------- */
+$('#sheetBody').addEventListener('click', async e => {
+  const b = e.target.closest('[data-l]'); if(!b) return;
+  const a = b.dataset.l, id = b.dataset.id;
+  if(a==='fechar') fecharPainel();
+  if(a==='verHotel') abrirHotel(id);
+  if(a==='editarHotel') abrirFormHotel(null, id);
+  if(a==='salvarHotel') salvarHotel(b);
+  if(a==='excluirHotel'){
+    const h = hoteis.find(x=>x.id===id);
+    if(!await confirmar(`Excluir "${h.nome}"?`)) return;
+    hoteis = hoteis.filter(x=>x.id!==id); salvarL(); desenharLugares(); fecharPainel(); toast('Hotel excluído');
+  }
+  if(a==='verCasa') abrirCasa();
+  if(a==='mudarCasa'){ marcarComo = 'casa'; abrirAdicionar(); }
+  if(a==='tirarCasa' && await confirmar('Tirar sua casa do mapa?')){ R.casa = null; salvarR(); desenharLugares(); desenharRota(); fecharPainel(); toast('Casa retirada do mapa'); }
+});
+
+/* ================= Nuvem (Supabase): login e sincronização ================= */
+// Os dados continuam guardados no aparelho e o app funciona sem internet. Com login, cada alteração
+// vai para a tabela "registros" do Supabase (um item por linha) e o que mudou em outro aparelho volta.
+// Conflito: vale a última alteração sincronizada. No primeiro login de um aparelho, vale o que já está na nuvem.
+const SUPA_URL = 'https://ykoafbzhqfmnothsybyp.supabase.co';
+const SUPA_KEY = 'sb_publishable_27SCZQz24VYNuQ9zyHaIOw_YjEtO_ic';
+const KEY_N = 'mapaClientes.nuvem.v1';
+// var (e não let): salvar() pode ser chamado antes desta parte do código rodar
+var nuvem = {sb:null, usuario:null, estado:'desligada', rodando:false, deNovo:false, aplicando:false, tEnvio:null, ultimaVez:null, erro:''};
+try{ if(SUPA_URL && window.supabase) nuvem.sb = supabase.createClient(SUPA_URL, SUPA_KEY); }catch(e){}
+
+function lerN(){ try{ return JSON.parse(localStorage.getItem(KEY_N)) || {}; }catch(e){ return {}; } }
+function gravarN(s){ try{ localStorage.setItem(KEY_N, JSON.stringify(s)); }catch(e){} }
+
+// Impressão digital curta de um item, para saber se ele mudou desde a última sincronização
+// O Postgres (jsonb) reordena os campos ao guardar, então a comparação ignora a ordem
+const ordenado = v => Array.isArray(v) ? v.map(ordenado) : (v && typeof v==='object') ? Object.keys(v).sort().reduce((o,k) => (o[k] = ordenado(v[k]), o), {}) : v;
+function resumo(obj){
+  const s = JSON.stringify(ordenado(obj)); let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for(let i=0;i<s.length;i++){ const c = s.charCodeAt(i); h1 = Math.imul(h1^c, 2654435761); h2 = Math.imul(h2^c, 1597334677); }
+  h1 = Math.imul(h1^(h1>>>16), 2246822507) ^ Math.imul(h2^(h2>>>13), 3266489909);
+  h2 = Math.imul(h2^(h2>>>16), 2246822507) ^ Math.imul(h1^(h1>>>13), 3266489909);
+  return (h2>>>0).toString(36) + (h1>>>0).toString(36);
+}
+// Tudo o que vai para a nuvem, como "tipo|id" → dados (a viagem sendo gravada agora fica só no aparelho)
+function itensLocais(){
+  const m = new Map();
+  clientes.forEach(c => m.set('cliente|'+c.id, c));
+  hoteis.forEach(h => m.set('hotel|'+h.id, h));
+  m.set('config|config', {casa:R.casa || null, destinoPadrao:R.destinoPadrao});
+  Object.entries(R.rotas).forEach(([k,r]) => m.set('rota_dia|'+k, r));
+  R.salvas.forEach(s => m.set('rota_salva|'+s.id, s));
+  R.viagens.forEach(v => m.set('viagem|'+v.id, v));
+  return m;
+}
+const separar = k => { const i = k.indexOf('|'); return [k.slice(0,i), k.slice(i+1)]; };
+function aplicarRemoto(tipo, id, dados, apagado){
+  const trocar = (lista, novo) => {
+    const i = lista.findIndex(x => x.id===id);
+    if(apagado){ if(i>=0) lista.splice(i,1); } else if(i>=0) lista[i] = novo; else lista.push(novo);
+  };
+  if(tipo==='cliente') trocar(clientes, apagado ? null : migrar(dados));
+  else if(tipo==='hotel') trocar(hoteis, dados);
+  else if(tipo==='rota_salva'){ trocar(R.salvas, dados); if(apagado && R.salvaVisivel===id) R.salvaVisivel = null; }
+  else if(tipo==='viagem'){ trocar(R.viagens, dados); R.viagens.sort((a,b) => b.inicio.localeCompare(a.inicio)); }
+  else if(tipo==='rota_dia'){ if(apagado) delete R.rotas[id]; else R.rotas[id] = dados; }
+  else if(tipo==='config' && !apagado){ R.casa = dados.casa || null; if(dados.destinoPadrao) R.destinoPadrao = dados.destinoPadrao; }
+}
+// O que mudou no aparelho e ainda não foi para a nuvem
+function pendentes(st){
+  const h = st.h || {}, locais = itensLocais(), lista = [];
+  locais.forEach((v,k) => { const r = resumo(v); if(r !== h[k]) lista.push({k, r, dados:v}); });
+  Object.keys(h).forEach(k => { if(!locais.has(k)) lista.push({k, r:null, dados:null}); });
+  return lista;
+}
+
+/* ---------- App aberto em mais de uma janela no mesmo aparelho ---------- */
+// Aba do Chrome e ícone da tela inicial dividem a mesma memória do aparelho, mas cada janela
+// guarda sua própria cópia dos dados. Uma janela esquecida aberta, com a cópia velha, devolvia
+// clientes excluídos e apagava hotéis novos ao sincronizar. Por isso, cada janela relê os dados
+// do aparelho quando outra grava, ao voltar para a tela e antes de sincronizar.
+function relerDoAparelho(){
+  let mudou = false;
+  try{
+    // Só relê o que outra janela gravou (diferente do que esta janela leu ou gravou por último)
+    const c = localStorage.getItem(KEY), l = localStorage.getItem(KEY_L), r = localStorage.getItem(KEY_R);
+    if(c !== null && c !== VISTO[KEY]){ clientes = carregar(); mudou = true; }
+    if(l !== null && l !== VISTO[KEY_L]){ hoteis = JSON.parse(VISTO[KEY_L] = l); mudou = true; }
+    if(r !== null && r !== VISTO[KEY_R]){
+      VISTO[KEY_R] = r;
+      // A viagem sendo gravada nesta janela tem pontos dos últimos segundos que ainda não foram gravados
+      const gravando = (typeof watchId !== 'undefined' && watchId !== null) ? R.viagemAtiva : null;
+      R = Object.assign(baseR(), JSON.parse(r));
+      if(gravando) R.viagemAtiva = gravando;
+      mudou = true;
+    }
+  }catch(e){}
+  if(mudou){
+    desenhar(); desenharSalvaVisivel();
+    // Um painel aberto aponta para a cópia velha: fecha para não gravar em cima
+    if(document.body.classList.contains('sheet-open')){ fecharPainel(); toast('Dados atualizados por outra janela do app'); }
+  }
+  return mudou;
+}
+let tReler;
+window.addEventListener('storage', e => {
+  if(e.key === null || [KEY, KEY_L, 'mapaClientes.rotas.v1'].includes(e.key)){ clearTimeout(tReler); tReler = setTimeout(relerDoAparelho, 200); }
+});
+window.addEventListener('pageshow', e => { if(e.persisted) relerDoAparelho(); });
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') relerDoAparelho(); });
+
+// Só uma janela sincroniza por vez (navigator.locks vale entre abas do mesmo site)
+async function sincronizar(){
+  if(navigator.locks) return navigator.locks.request('mapaClientes-sync', {ifAvailable:true}, lock => lock ? sincronizarAgora() : null);
+  return sincronizarAgora();
+}
+async function sincronizarAgora(){
+  if(!nuvem.sb || !nuvem.usuario) return null;
+  if(!navigator.onLine){ marcarNuvem('offline'); return null; }
+  if(nuvem.rodando){ nuvem.deNovo = true; return null; }
+  nuvem.rodando = true; marcarNuvem('enviando');
+  let recebidos = 0, enviados = 0;
+  try{
+    relerDoAparelho();
+    const st = lerN();
+    if(st.userId !== nuvem.usuario.id){ st.userId = nuvem.usuario.id; st.ultimo = null; st.h = {}; }
+    const h = st.h || (st.h = {}), primeira = !st.ultimo;
+
+    // 1) Trazer da nuvem o que mudou (com 10 s de folga, repetir um item não faz mal)
+    const locais = itensLocais();
+    let maior = st.ultimo, mudou = false;
+    for(let de=0;;de+=1000){
+      let q = nuvem.sb.from('registros').select('tipo,id,dados,apagado,atualizado_em').order('atualizado_em').range(de, de+999);
+      if(st.ultimo) q = q.gt('atualizado_em', new Date(new Date(st.ultimo).getTime()-10000).toISOString());
+      const {data, error} = await q; if(error) throw error;
+      for(const r of data){
+        if(!maior || r.atualizado_em > maior) maior = r.atualizado_em;
+        const k = r.tipo+'|'+r.id, local = locais.get(k);
+        const remoto = r.apagado ? null : resumo(r.dados), doAparelho = local ? resumo(local) : null;
+        if(doAparelho === remoto){ if(remoto) h[k] = remoto; else delete h[k]; continue; }
+        // Mudou aqui desde a última sincronização: fica a versão do aparelho, que vai ser enviada logo abaixo
+        if(!primeira && doAparelho !== (h[k] ?? null)) continue;
+        aplicarRemoto(r.tipo, r.id, r.dados, r.apagado);
+        if(remoto) h[k] = remoto; else delete h[k];
+        mudou = true; recebidos++;
+      }
+      if(data.length < 1000) break;
+    }
+    if(mudou){
+      nuvem.aplicando = true; salvar(); salvarL(); salvarR(); nuvem.aplicando = false;
+      desenhar(); desenharSalvaVisivel();
+      // Aparelho novo: fecha o aviso de "mapa vazio" e mostra o que chegou
+      if($('#eImport') && document.body.classList.contains('sheet-open')){ fecharPainel(); if(clientes.length) enquadrar(clientes); }
+    }
+
+    // 2) Enviar o que mudou no aparelho (itens apagados vão marcados como apagados)
+    const lista = pendentes(st);
+    // Trava de segurança: apagar muitos itens de uma vez na nuvem só com confirmação.
+    // Se a resposta for não, a próxima sincronização traz tudo de volta da nuvem para o aparelho.
+    const apagando = lista.filter(p => !p.dados).length;
+    if(apagando > 10 && !await confirmar(`A sincronização vai apagar ${apagando} itens também na nuvem (clientes, hotéis, rotas ou viagens).\n\nVocê apagou tudo isso de propósito?`, 'Sim, apagar', 'Não, trazer de volta')){
+      st.ultimo = null; gravarN(st); nuvem.deNovo = true;
+      throw new Error('exclusões canceladas; trazendo os dados de volta da nuvem');
+    }
+    for(let i=0;i<lista.length;i+=100){
+      const lote = lista.slice(i, i+100);
+      const linhas = lote.map(p => { const [tipo, id] = separar(p.k); return {user_id:nuvem.usuario.id, tipo, id, dados:p.dados, apagado:!p.dados}; });
+      const {error} = await nuvem.sb.from('registros').upsert(linhas, {onConflict:'user_id,tipo,id'});
+      if(error) throw error;
+      lote.forEach(p => { if(p.r) h[p.k] = p.r; else delete h[p.k]; });
+      enviados += lote.length;
+      gravarN({...st, h});
+    }
+    st.ultimo = maior || st.ultimo || new Date(0).toISOString();
+    gravarN(st);
+    nuvem.ultimaVez = new Date(); nuvem.erro = '';
+    marcarNuvem(pendentes(st).length ? 'pendente' : 'ok');
+  }catch(e){
+    nuvem.erro = e && (e.message || e.error_description) || 'erro desconhecido';
+    marcarNuvem(navigator.onLine ? 'erro' : 'offline');
+    return null;
+  }finally{
+    nuvem.rodando = false;
+    if(nuvem.deNovo){ nuvem.deNovo = false; setTimeout(sincronizar, 500); }
+  }
+  return {recebidos, enviados};
+}
+// Chamado a cada salvar(): espera 2,5 s de calma e envia (só se algo da nuvem mudou de fato)
+function agendarEnvio(){
+  if(!nuvem || !nuvem.sb || !nuvem.usuario || nuvem.aplicando) return;
+  clearTimeout(nuvem.tEnvio);
+  nuvem.tEnvio = setTimeout(() => { if(pendentes(lerN()).length){ marcarNuvem('pendente'); sincronizar(); } }, 2500);
+}
+function marcarNuvem(estado){
+  nuvem.estado = estado;
+  const b = $('#menuBtn'); if(b) b.dataset.nuvem = estado;
+  const t = $('#nuvemTxt'); if(t) t.textContent = textoNuvem();
+}
+function textoNuvem(){
+  const hora = nuvem.ultimaVez ? nuvem.ultimaVez.toLocaleTimeString('pt-BR',{timeStyle:'short'}) : '';
+  return ({
+    ok: 'Tudo sincronizado' + (hora ? ` às ${hora}` : ''),
+    pendente: 'Há alterações esperando para enviar',
+    enviando: 'Sincronizando…',
+    offline: 'Sem internet. O que você fizer fica no aparelho e vai para a nuvem quando o sinal voltar.',
+    erro: 'Não consegui sincronizar: ' + nuvem.erro
+  })[nuvem.estado] || '';
+}
+function htmlNuvem(){
+  if(!SUPA_URL) return '';
+  if(!nuvem.sb) return `<div class="nuvem"><b>Nuvem indisponível agora</b><span>O app abriu sem internet. Feche e abra de novo com sinal para sincronizar.</span></div>`;
+  if(!nuvem.usuario) return `<div class="nuvem"><b>Guardar na nuvem</b><span>Entre para seus dados ficarem salvos no Supabase e aparecerem no celular e no computador.</span><button class="btn primary block" data-n="login" style="margin-top:10px">Entrar</button></div>`;
+  return `<div class="nuvem on"><b>Nuvem: ${esc(nuvem.usuario.email||'conectado')}</b><span id="nuvemTxt">${esc(textoNuvem())}</span>
+    <div class="row" style="margin-top:10px"><button class="btn grow" data-n="sync">Sincronizar agora</button><button class="btn grow" data-n="sair">Sair</button></div></div>`;
+}
+function abrirLogin(){
+  abrirPainel(`<h2>Entrar na nuvem</h2>
+    <p class="muted" style="margin:0 0 4px;line-height:1.45">Use o e-mail e a senha do usuário que você criou no Supabase. Você só precisa entrar uma vez em cada aparelho.</p>
+    <label class="f">E-mail<input class="inp" id="nEmail" type="email" inputmode="email" autocomplete="username"></label>
+    <label class="f">Senha<input class="inp" id="nSenha" type="password" autocomplete="current-password"></label>
+    <div class="row" style="margin-top:16px"><button class="btn grow" data-n="voltar">Voltar</button><button class="btn primary grow" data-n="entrar">Entrar</button></div>`);
+  setTimeout(() => $('#nEmail')?.focus(), 260);
+  $('#nSenha').addEventListener('keydown', e => { if(e.key==='Enter') entrar(); });
+}
+async function entrar(){
+  const email = $('#nEmail').value.trim(), senha = $('#nSenha').value;
+  if(!email || !senha){ toast('Preencha o e-mail e a senha.'); return; }
+  const b = document.querySelector('[data-n=entrar]'); b.disabled = true; b.textContent = 'Entrando…';
+  const {data, error} = await nuvem.sb.auth.signInWithPassword({email, password:senha});
+  if(error){
+    b.disabled = false; b.textContent = 'Entrar';
+    toast(/invalid login/i.test(error.message) ? 'E-mail ou senha incorretos.' : 'Não consegui entrar: ' + error.message);
+    return;
+  }
+  nuvem.usuario = data.user; fecharPainel(); toast('Conectado. Sincronizando…');
+  const r = await sincronizar();
+  if(r) toast(`Nuvem sincronizada: ${r.enviados} enviado${r.enviados===1?'':'s'}, ${r.recebidos} recebido${r.recebidos===1?'':'s'}`);
+  else toast(textoNuvem());
+}
+$('#sheetBody').addEventListener('click', async e => {
+  const b = e.target.closest('[data-n]'); if(!b) return;
+  const a = b.dataset.n;
+  if(a==='login') abrirLogin();
+  if(a==='voltar') $('#menuBtn').click();
+  if(a==='entrar') entrar();
+  if(a==='sync'){ const r = await sincronizar(); toast(r ? `Sincronizado: ${r.enviados} enviado${r.enviados===1?'':'s'}, ${r.recebidos} recebido${r.recebidos===1?'':'s'}` : textoNuvem()); }
+  if(a==='sair' && await confirmar('Sair da nuvem? Os dados continuam neste aparelho, mas param de sincronizar.')){
+    await nuvem.sb.auth.signOut(); nuvem.usuario = null; marcarNuvem('sair'); $('#menuBtn').click(); toast('Você saiu da nuvem');
+  }
+});
+if(nuvem.sb){
+  nuvem.sb.auth.getSession().then(({data}) => {
+    nuvem.usuario = data.session ? data.session.user : null;
+    marcarNuvem(nuvem.usuario ? 'ok' : 'sair');
+    if(nuvem.usuario) sincronizar();
+  }).catch(() => {});
+  nuvem.sb.auth.onAuthStateChange((ev, s) => { nuvem.usuario = s ? s.user : null; if(ev==='SIGNED_OUT') marcarNuvem('sair'); });
+  window.addEventListener('online', () => sincronizar());
+  window.addEventListener('offline', () => marcarNuvem('offline'));
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible') sincronizar(); });
+  setInterval(() => { if(document.visibilityState==='visible') sincronizar(); }, 5*60000);
+}
+
+/* ================= Tema claro / escuro ================= */
+const KEY_TEMA = 'mapaClientes.tema';
+const prefTema = () => { try{ return localStorage.getItem(KEY_TEMA) || 'auto'; }catch(e){ return 'auto'; } };
+const mqEscuro = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+function aplicarTema(){
+  const p = prefTema();
+  const novo = (p==='escuro' || (p==='auto' && mqEscuro && mqEscuro.matches)) ? 'escuro' : 'claro';
+  const mudou = document.documentElement.dataset.tema !== novo;
+  document.documentElement.dataset.tema = novo;
+  $('#metaTema').setAttribute('content', novo==='escuro' ? '#0C131B' : '#EEF1F5');
+  if(!mudou) return;
+  if(glMapa) glMapa.setStyle(estiloMapa());
+  desenharRota();
+}
+function definirTema(p){
+  try{ localStorage.setItem(KEY_TEMA, p); }catch(e){}
+  aplicarTema();
+}
+if(mqEscuro) mqEscuro.addEventListener('change', () => { if(prefTema()==='auto') aplicarTema(); });
+
+/* ================= Ícones do menu ================= */
+const svgIco = d => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICO = {
+  importar: svgIco('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>'),
+  exportar: svgIco('<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/>'),
+  salvar: svgIco('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/>'),
+  restaurar: svgIco('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>')
+};
+
+/* ================= Arrastar o painel para baixo fecha ================= */
+(() => {
+  const sheet = $('#sheet'), grip = sheet.querySelector('.grip');
+  let y0 = null, dy = 0;
+  grip.addEventListener('pointerdown', e => { y0 = e.clientY; dy = 0; sheet.classList.add('arrastando'); grip.setPointerCapture(e.pointerId); });
+  grip.addEventListener('pointermove', e => { if(y0===null) return; dy = Math.max(0, e.clientY - y0); sheet.style.transform = `translateY(${dy}px)`; });
+  const soltar = () => {
+    if(y0===null) return; y0 = null;
+    sheet.classList.remove('arrastando'); sheet.style.transform = '';
+    if(dy > 90) fecharPainel();
+  };
+  grip.addEventListener('pointerup', soltar);
+  grip.addEventListener('pointercancel', soltar);
+})();
+
+/* ================= Confirmação ================= */
+// Janela do próprio app no lugar do confirm() do navegador: o Chrome deixa o usuário bloquear
+// as caixas de diálogo de um site, e aí toda exclusão era cancelada sem aviso.
+function confirmar(msg, sim, nao){
+  const d = $('#dialogo');
+  $('#dlgTxt').textContent = msg;
+  // O botão leva o verbo da pergunta ("Excluir", "Apagar"...) e fica vermelho quando apaga algo
+  const verbo = (msg.match(/^(Excluir|Apagar|Descartar|Tirar|Substituir|Sair|Encerrar)/) || [])[1];
+  const acao = sim || verbo || 'Confirmar';
+  $('#dlgSim').textContent = acao;
+  $('#dlgNao').textContent = nao || 'Cancelar';
+  $('#dlgSim').className = 'btn grow ' + (/^(Excluir|Apagar|Descartar|Tirar|Substituir|Sim, apagar)/.test(acao) ? 'perigo' : 'primary');
+  d.classList.add('show');
+  return new Promise(ok => {
+    const fim = v => { d.classList.remove('show'); d.onclick = $('#dlgSim').onclick = $('#dlgNao').onclick = null; ok(v); };
+    $('#dlgSim').onclick = () => fim(true);
+    $('#dlgNao').onclick = () => fim(false);
+    d.onclick = e => { if(e.target === d) fim(false); };
+    setTimeout(() => $('#dlgNao').focus(), 50);
+  });
+}
+
+/* ================= Aviso ================= */
+let tToast;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(tToast); tToast = setTimeout(()=>t.classList.remove('show'), 2800);
+}
+
+/* =====================================================================
+   ROTAS: rota de clientes (visitas do dia) e rota de viagem (gravada por GPS)
+   ===================================================================== */
+const KEY_R = 'mapaClientes.rotas.v1';
+const baseR = () => ({casa:null, destinoPadrao:'Parauapebas', rotas:{}, viagens:[], viagemAtiva:null, salvas:[], salvaVisivel:null});
+let R = (() => { try{ const v = JSON.parse(VISTO[KEY_R] = localStorage.getItem(KEY_R)); if(v && typeof v==='object') return Object.assign(baseR(), v); }catch(e){} return baseR(); })();
+function salvarR(){
+  try{ const s = JSON.stringify(R); localStorage.setItem(KEY_R, s); VISTO[KEY_R] = s; }
+  catch(e){ toast('Memória do navegador cheia. Salve um backup e apague viagens antigas.'); }
+  agendarEnvio(); // nuvem
+}
+// Data local AAAA-MM-DD (toISOString sozinho é UTC e vira o dia às 21h no Brasil)
+const diaLocal = x => { const d = new Date(x); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
+const hojeKey = () => diaLocal(Date.now());
+const fmtDia = k => { const [y,m,d] = k.split('-'); return `${d}/${m}/${y.slice(2)}`; };
+const cli = id => clientes.find(c=>c.id===id);
+function rotaHoje(criar){
+  const k = hojeKey();
+  if(!R.rotas[k] && criar) R.rotas[k] = {paradas:[], feitas:[]};
+  const r = R.rotas[k];
+  if(r){ r.paradas = r.paradas.filter(cli); r.feitas = r.feitas.filter(id=>r.paradas.includes(id)); }
+  return r;
+}
+const pontoInicio = () => minhaPos || (R.casa ? [R.casa.lat, R.casa.lng] : null);
+const dist = (a,b) => map.distance(a,b);
+const fmtKm = km => km.toFixed(km < 10 ? 1 : 0).replace('.',',') + ' km';
+function fmtDur(ms){
+  const min = Math.round(ms/60000); if(min < 60) return `${min} min`;
+  return `${Math.floor(min/60)} h ${String(min%60).padStart(2,'0')} min`;
+}
+
+// Douglas-Peucker: mantém só os pontos que mudam o desenho mais que `tol` metros.
+// Numa reta de 5 km, 160 pontos viram 2. Os km já foram somados antes, com todos os pontos.
+function simplificar(pts, tol=15){
+  if(!pts || pts.length < 3) return pts || [];
+  const kx = 111320*Math.cos(pts[0][0]*Math.PI/180), ky = 110540;
+  const xy = pts.map(p => [p[1]*kx, p[0]*ky]);
+  const manter = new Uint8Array(pts.length); manter[0] = manter[pts.length-1] = 1;
+  const pilha = [[0, pts.length-1]];
+  while(pilha.length){
+    const [a,b] = pilha.pop();
+    const [ax,ay] = xy[a], dx = xy[b][0]-ax, dy = xy[b][1]-ay, L2 = dx*dx+dy*dy;
+    let md = 0, mi = -1;
+    for(let i=a+1;i<b;i++){
+      let t = L2 ? ((xy[i][0]-ax)*dx + (xy[i][1]-ay)*dy)/L2 : 0; t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(xy[i][0]-ax-t*dx, xy[i][1]-ay-t*dy);
+      if(d > md){ md = d; mi = i; }
+    }
+    if(md > tol){ manter[mi] = 1; pilha.push([a,mi],[mi,b]); }
+  }
+  return pts.filter((_,i) => manter[i]);
+}
+// Viagens gravadas antes desta versão: simplifica uma vez só
+if(!R.simplificado){
+  R.viagens.forEach(v => { v.pontos = simplificar(v.pontos); });
+  R.simplificado = 1; salvarR();
+}
+
+// Enquadra uma linha na parte do mapa que não está coberta pela barra de cima nem pelo painel de baixo
+function enquadrarLinha(ll){
+  seguirMinhaPos(false);
+  const celular = innerWidth < 720 && document.body.classList.contains('sheet-open');
+  const baixo = celular ? $('#sheet').offsetHeight + 20 : 50;
+  const direita = !celular && document.body.classList.contains('sheet-open') ? 460 : 40;
+  map.fitBounds(L.latLngBounds(ll), {paddingTopLeft:[40,130], paddingBottomRight:[direita, baixo]});
+}
+
+/* ---------- Desenho no mapa ---------- */
+const camadaRota = L.layerGroup().addTo(map);
+const camadaViagem = L.layerGroup().addTo(map);
+let trilhaAtiva = null;
+
+function desenharRota(){
+  camadaRota.clearLayers();
+  const r = rotaHoje(false); if(!r || !r.paradas.length) return;
+  const cs = r.paradas.map(cli);
+  const pend = cs.filter(c=>!r.feitas.includes(c.id));
+  const linha = pend.map(c=>[c.lat,c.lng]);
+  const ini = pontoInicio(); if(ini && linha.length) linha.unshift(ini);
+  if(linha.length > 1) L.polyline(linha, {color:escuro() ? '#8FB8FF' : '#14283B', weight:3, opacity:.75, dashArray:'7 8', interactive:false}).addTo(camadaRota);
+  cs.forEach((c,i) => L.marker([c.lat,c.lng], {
+    icon:L.divIcon({className:'', html:`<div class="num${r.feitas.includes(c.id)?' ok':''}">${r.feitas.includes(c.id)?'✓':i+1}</div>`, iconSize:[20,20], iconAnchor:[-2,42]}),
+    interactive:false, zIndexOffset:800
+  }).addTo(camadaRota));
+}
+
+/* ---------- Rota de clientes ---------- */
+function alternarNaRota(id){
+  const r = rotaHoje(true);
+  if(r.paradas.includes(id)){ r.paradas = r.paradas.filter(x=>x!==id); r.feitas = r.feitas.filter(x=>x!==id); }
+  else r.paradas.push(id);
+  salvarR(); desenharRota(); atualizarSelbar();
+  return r.paradas.includes(id);
+}
+function marcarFeita(id){
+  const r = rotaHoje(false);
+  if(r && r.paradas.includes(id) && !r.feitas.includes(id)){ r.feitas.push(id); salvarR(); desenharRota(); }
+}
+function custo(ordem, ini){
+  let t = 0, p = ini;
+  ordem.forEach(id => { const c = cli(id); if(p) t += dist(p,[c.lat,c.lng]); p = [c.lat,c.lng]; });
+  return t;
+}
+function otimizarRota(){
+  const r = rotaHoje(false); if(!r) return;
+  const feitas = r.paradas.filter(id=>r.feitas.includes(id));
+  let resto = r.paradas.filter(id=>!r.feitas.includes(id));
+  const ini = pontoInicio();
+  // vizinho mais próximo
+  const ordem = []; let p = ini || (resto.length ? [cli(resto[0]).lat, cli(resto[0]).lng] : null);
+  while(resto.length){
+    let m = 0, md = Infinity;
+    resto.forEach((id,i) => { const c = cli(id); const d = dist(p,[c.lat,c.lng]); if(d < md){ md = d; m = i; } });
+    const id = resto.splice(m,1)[0]; ordem.push(id); const c = cli(id); p = [c.lat,c.lng];
+  }
+  // melhoria 2-opt
+  let melhorou = true, voltas = 0;
+  while(melhorou && voltas++ < 50){
+    melhorou = false;
+    for(let i=0;i<ordem.length-1;i++) for(let k=i+1;k<ordem.length;k++){
+      const nova = [...ordem.slice(0,i), ...ordem.slice(i,k+1).reverse(), ...ordem.slice(k+1)];
+      if(custo(nova,ini) + 1 < custo(ordem,ini)){ ordem.splice(0, ordem.length, ...nova); melhorou = true; }
+    }
+  }
+  r.paradas = [...feitas, ...ordem];
+  salvarR(); desenharRota();
+  toast(ini ? (minhaPos ? 'Ordem ajustada a partir de onde você está' : 'Ordem ajustada a partir da sua casa') : 'Ordem ajustada');
+}
+function linksGoogle(){
+  const r = rotaHoje(false); if(!r) return [];
+  const pend = r.paradas.filter(id=>!r.feitas.includes(id)).map(cli);
+  const links = [];
+  for(let i=0;i<pend.length;i+=10){
+    const trecho = pend.slice(i,i+10);
+    const destino = trecho[trecho.length-1];
+    const meio = trecho.slice(0,-1).map(c=>`${c.lat},${c.lng}`).join('|');
+    let u = `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${destino.lat},${destino.lng}`;
+    if(i>0){ const o = pend[i-1]; u += `&origin=${o.lat},${o.lng}`; }
+    if(meio) u += `&waypoints=${encodeURIComponent(meio)}`;
+    links.push({u, de:i+1, ate:i+trecho.length});
+  }
+  return links;
+}
+
+let modoSelecao = false;
+function entrarSelecao(){
+  modoSelecao = true; fecharPainel();
+  document.body.classList.add('selecting'); atualizarSelbar();
+  const r = rotaHoje(false);
+  if(!(r && r.paradas.length) && clientes.length) enquadrar(clientes.filter(passaFiltro));
+}
+function sairSelecao(){ modoSelecao = false; document.body.classList.remove('selecting'); abrirRotas('dia'); }
+function atualizarSelbar(){
+  const r = rotaHoje(false); const n = r ? r.paradas.length : 0;
+  $('#selTxt').textContent = n ? `${n} parada${n===1?'':'s'} na rota de hoje. Toque nos clientes para incluir ou tirar.` : 'Toque nos clientes que vai visitar hoje.';
+}
+$('#selOk').onclick = sairSelecao;
+
+/* ---------- Painel de rotas ---------- */
+function abrirRotas(aba){
+  aba = aba || (R.viagemAtiva ? 'viagem' : 'dia');
+  const abas = `<div class="tabs" role="tablist">
+    <button role="tab" data-rt="aba" data-v="dia" aria-selected="${aba==='dia'}">Clientes</button>
+    <button role="tab" data-rt="aba" data-v="salvas" aria-selected="${aba==='salvas'}">Minhas rotas</button>
+    <button role="tab" data-rt="aba" data-v="viagem" aria-selected="${aba==='viagem'}">Viagens</button></div>`;
+  abrirPainel(abas + (aba==='dia' ? htmlDia() : aba==='salvas' ? htmlSalvas() : htmlViagem()));
+  if(aba==='viagem' && R.viagemAtiva) atualizarAoVivo();
+}
+
+function htmlDia(){
+  const r = rotaHoje(false);
+  const hist = Object.keys(R.rotas).filter(k=>k!==hojeKey() && R.rotas[k].paradas.length).sort().reverse().slice(0,10);
+  const nFiltro = filtro!=='todos' ? clientes.filter(passaFiltro).length : 0;
+  let h = `<h2>Visitas de hoje <span class="muted" style="font-weight:600;font-size:18px">${fmtDia(hojeKey())}</span></h2>`;
+  if(!r || !r.paradas.length){
+    h += `<p class="muted" style="margin:0 0 14px;line-height:1.45">Monte a sequência de clientes que você vai visitar hoje. Eles aparecem numerados no mapa.</p>
+      <button class="btn primary block" data-rt="selecionar">Escolher clientes no mapa</button>
+      ${nFiltro?`<button class="btn block" data-rt="filtro" style="margin-top:8px">Adicionar os ${nFiltro} do filtro atual</button>`:''}`;
+  } else {
+    const cs = r.paradas.map(cli);
+    const pend = cs.filter(c=>!r.feitas.includes(c.id));
+    const km = custo(pend.map(c=>c.id), pontoInicio())/1000;
+    h += `<p class="muted" style="margin:0 0 10px">${r.feitas.length} de ${cs.length} visitadas${pend.length?`. Faltam cerca de ${fmtKm(km)} em linha reta`:''}.</p>
+      <ol class="stops">${cs.map((c,i)=>{ const f = r.feitas.includes(c.id); const s = STATUS[c.status]||STATUS.nao;
+        return `<li class="${f?'done':''}">
+          <button class="chk" data-rt="feita" data-id="${c.id}" aria-label="${f?'Desmarcar':'Marcar como visitado'}">${f?'✓':i+1}</button>
+          <button class="nmbtn" data-rt="abrir" data-id="${c.id}"><span class="nm"><span class="dot${ehP(c)?' p':''}" style="--c:${s.cor}"></span>${esc(c.nome)}</span><span class="sub">${s.label}</span></button>
+          <span class="mv"><button data-rt="sobe" data-i="${i}" aria-label="Subir" ${i===0?'disabled':''}>▲</button><button data-rt="desce" data-i="${i}" aria-label="Descer" ${i===cs.length-1?'disabled':''}>▼</button><button data-rt="tirar" data-id="${c.id}" aria-label="Tirar da rota">×</button></span>
+        </li>`; }).join('')}</ol>
+      <div class="row" style="margin-top:12px">
+        <button class="btn grow" data-rt="otimizar">Melhor ordem</button>
+        <button class="btn grow" data-rt="selecionar">Incluir ou tirar</button>
+      </div>
+      ${pend.length ? linksGoogle().map((l,j,arr)=>`<a class="btn dark block" style="margin-top:8px" href="${l.u}" target="_blank" rel="noopener">Abrir no Google Maps${arr.length>1?` (paradas ${l.de} a ${l.ate})`:''}</a>`).join('') : '<p class="ok-msg">Todas as visitas de hoje foram feitas.</p>'}
+      <button class="btn danger block" data-rt="limpar" style="margin-top:8px">Apagar rota de hoje</button>`;
+  }
+  if(hist.length){
+    h += `<h3>Rotas anteriores</h3><ul class="list">${hist.map(k=>{ const x = R.rotas[k];
+      return `<li><button data-rt="repetir" data-k="${k}"><span><span class="nm">${fmtDia(k)}</span><span class="sub">${x.paradas.length} paradas, ${x.feitas.length} visitadas</span></span><span class="dist">Repetir hoje</span></button></li>`; }).join('')}</ul>`;
+  }
+  return h;
+}
+
+/* ---------- Rota de viagem ---------- */
+let watchId = null, wakeLock = null, tSalvar = null, tRelogio = null;
+
+function htmlViagem(){
+  const v = R.viagemAtiva;
+  const mes = hojeKey().slice(0,7);
+  const doMes = R.viagens.filter(x=>diaLocal(x.inicio).slice(0,7)===mes);
+  const kmMes = doMes.reduce((t,x)=>t+x.km,0);
+  let h = '';
+  if(v){
+    h += `<h2>Viagem em andamento</h2>
+      <p style="margin:0 0 6px;font-size:17px"><b>${esc(v.origem)}</b> para <b>${esc(v.destino)}</b></p>
+      <div class="live"><div><b id="lvKm">${fmtKm(v.km)}</b><span>percorridos</span></div><div><b id="lvT">${fmtDur(Date.now()-new Date(v.inicio))}</b><span>de viagem</span></div></div>
+      <p class="muted" style="font-size:14px;line-height:1.45;margin:10px 0">Deixe o app aberto e a tela ligada durante a viagem. Com a tela apagada o celular para de enviar a localização.</p>
+      <button class="btn primary block" data-rt="encerrar">Cheguei, encerrar viagem</button>
+      <button class="btn danger block" data-rt="descartar" style="margin-top:8px">Descartar esta viagem</button>`;
+  } else {
+    h += `<h2>Nova viagem</h2>
+      <label class="f">Saindo de<input class="inp" id="vgOrig" value="Casa" autocomplete="off"></label>
+      <label class="f">Indo para<input class="inp" id="vgDest" value="${esc(R.destinoPadrao)}" autocomplete="off"></label>
+      <button class="btn primary block" data-rt="iniciar" style="margin-top:14px">Iniciar e gravar percurso</button>
+      ${R.salvas.length ? `<button class="btn block" data-rt="fizSalva" style="margin-top:8px">Fiz uma das minhas rotas</button>` : ''}
+      <button class="btn block" data-rt="manual" style="margin-top:8px">Registrar viagem já feita</button>
+      <p class="muted" style="font-size:14px;margin:12px 0 0">Casa: ${R.casa?'marcada no mapa':'ainda não marcada'}. <button class="linkbtn" data-rt="casa">${R.casa?'Atualizar para onde estou':'Marcar onde estou agora'}</button></p>`;
+  }
+  h += `<h3>Viagens</h3>
+    <div class="summary" style="grid-template-columns:repeat(2,1fr)"><div><b>${doMes.length}</b><span>viagens no mês</span></div><div><b>${fmtKm(kmMes)}</b><span>rodados no mês</span></div></div>`;
+  if(R.viagens.length){
+    h += `<ul class="list">${R.viagens.slice(0,30).map(x=>`<li><button data-rt="verViagem" data-id="${x.id}"><span><span class="nm">${esc(x.origem)} para ${esc(x.destino)}</span><span class="sub">${fmtData(x.inicio)}${x.fim?`, ${fmtDur(new Date(x.fim)-new Date(x.inicio))}`:''}${x.rotaId?', rota salva':x.manual?', registrada à mão':''}</span></span><span class="dist">${fmtKm(x.km)}</span></button></li>`).join('')}</ul>
+      <button class="btn block" data-rt="csv" style="margin-top:10px">Exportar planilha de viagens</button>`;
+  } else h += `<p class="muted" style="margin:0">Nenhuma viagem gravada ainda.</p>`;
+  return h;
+}
+
+function iniciarViagem(){
+  if(!navigator.geolocation){ toast('Este navegador não oferece GPS.'); return; }
+  const origem = $('#vgOrig').value.trim() || 'Casa', destino = $('#vgDest').value.trim() || 'Destino';
+  R.destinoPadrao = destino;
+  R.viagemAtiva = {id:uid(), origem, destino, inicio:new Date().toISOString(), pontos:[], km:0};
+  salvarR(); ligarRastreio(); abrirRotas('viagem');
+  toast('Gravando a viagem');
+}
+function ligarRastreio(){
+  const v = R.viagemAtiva; if(!v || watchId!==null) return;
+  camadaViagem.clearLayers();
+  trilhaAtiva = L.polyline(v.pontos.map(p=>[p[0],p[1]]), {color:'#2563C9', weight:5, opacity:.85}).addTo(camadaViagem);
+  watchId = navigator.geolocation.watchPosition(pos => {
+    const v = R.viagemAtiva; if(!v) return;
+    const c = pos.coords; if(c.accuracy > 60) return;
+    const pt = [+c.latitude.toFixed(5), +c.longitude.toFixed(5), Date.now()];
+    const ult = v.pontos[v.pontos.length-1];
+    if(ult){
+      const d = dist([ult[0],ult[1]],[pt[0],pt[1]]);
+      if(d < 30) return;
+      if(d / Math.max(1,(pt[2]-ult[2])/1000) > 70) return; // salto de GPS (mais de 250 km/h)
+      v.km += d/1000;
+    }
+    v.pontos.push(pt);
+    minhaPos = [pt[0],pt[1]]; mostrarMinhaPos();
+    trilhaAtiva.addLatLng([pt[0],pt[1]]);
+    clearTimeout(tSalvar); tSalvar = setTimeout(salvarR, 3000);
+    atualizarAoVivo();
+  }, err => {
+    if(err.code===1) toast('Permita o acesso à localização para gravar a viagem.');
+  }, {enableHighAccuracy:true, maximumAge:5000, timeout:30000});
+  pedirTelaLigada();
+  clearInterval(tRelogio); tRelogio = setInterval(atualizarAoVivo, 30000);
+  atualizarAoVivo();
+}
+function desligarRastreio(){
+  if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId = null; }
+  clearInterval(tRelogio); clearTimeout(tSalvar);
+  try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock = null;
+  $('#trip').classList.remove('show');
+}
+async function pedirTelaLigada(){
+  try{ if('wakeLock' in navigator && document.visibilityState==='visible') wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+}
+document.addEventListener('visibilitychange', () => { if((R.viagemAtiva || seguindo) && document.visibilityState==='visible') pedirTelaLigada(); });
+function atualizarAoVivo(){
+  const v = R.viagemAtiva; if(!v) return;
+  const km = fmtKm(v.km), t = fmtDur(Date.now()-new Date(v.inicio));
+  $('#trip').classList.add('show');
+  $('#tripTxt').textContent = `Gravando viagem: ${km} em ${t}`;
+  const a = document.getElementById('lvKm'), b = document.getElementById('lvT');
+  if(a) a.textContent = km; if(b) b.textContent = t;
+}
+function encerrarViagem(){
+  const v = R.viagemAtiva; if(!v) return;
+  v.fim = new Date().toISOString(); v.km = Math.round(v.km*10)/10;
+  v.pontos = simplificar(v.pontos); // economiza memória; os km já estão somados
+  R.viagens.unshift(v); R.viagemAtiva = null;
+  desligarRastreio(); salvarR();
+  mostrarViagem(v.id);
+  toast(`Viagem salva: ${fmtKm(v.km)}`);
+}
+function mostrarViagem(id){
+  const v = R.viagens.find(x=>x.id===id); if(!v) return;
+  camadaViagem.clearLayers();
+  if(v.pontos && v.pontos.length > 1){
+    const ll = v.pontos.map(p=>[p[0],p[1]]);
+    L.polyline(ll, {color:'#2563C9', weight:5, opacity:.85}).addTo(camadaViagem);
+    L.circleMarker(ll[0], {radius:7, color:'#fff', weight:3, fillColor:'#1F9D55', fillOpacity:1}).addTo(camadaViagem);
+    L.circleMarker(ll[ll.length-1], {radius:7, color:'#fff', weight:3, fillColor:'#C8372D', fillOpacity:1}).addTo(camadaViagem);
+    setTimeout(() => enquadrarLinha(ll), 0);
+  }
+  abrirPainel(`<h2>${esc(v.origem)} para ${esc(v.destino)}</h2>
+    <div class="live"><div><b>${fmtKm(v.km)}</b><span>percorridos</span></div><div><b>${v.fim?fmtDur(new Date(v.fim)-new Date(v.inicio)):'—'}</b><span>de viagem</span></div></div>
+    <p class="muted">${v.manual ? fmtData(v.inicio) : new Date(v.inicio).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}${v.fim&&!v.manual?` até ${new Date(v.fim).toLocaleTimeString('pt-BR',{timeStyle:'short'})}`:''}${v.rotaId?'. Registrada com os km de uma rota salva.':v.manual?'. Registrada à mão, sem percurso no mapa.':'. Início em verde, chegada em vermelho.'}</p>
+    <div class="row"><button class="btn grow" data-rt="aba" data-v="viagem">Voltar</button><button class="btn danger grow" data-rt="apagarViagem" data-id="${v.id}">Apagar viagem</button></div>`);
+}
+function formManual(){
+  abrirPainel(`<h2>Registrar viagem já feita</h2>
+    <label class="f">Data<input class="inp" id="mData" type="date" value="${hojeKey()}" max="${hojeKey()}"></label>
+    <label class="f">Saindo de<input class="inp" id="mOrig" value="Casa"></label>
+    <label class="f">Indo para<input class="inp" id="mDest" value="${esc(R.destinoPadrao)}"></label>
+    <label class="f">Quilômetros rodados<input class="inp" id="mKm" type="number" inputmode="decimal" min="0" step="0.1"></label>
+    <div class="row" style="margin-top:16px"><button class="btn grow" data-rt="aba" data-v="viagem">Cancelar</button><button class="btn primary grow" data-rt="salvarManual">Salvar viagem</button></div>`);
+}
+function exportarCSV(){
+  const linhas = [['Data','Saída','Chegada','Origem','Destino','Km','Duração','Tipo']];
+  R.viagens.slice().reverse().forEach(v => linhas.push([
+    fmtData(v.inicio),
+    v.manual ? '' : new Date(v.inicio).toLocaleTimeString('pt-BR',{timeStyle:'short'}),
+    v.manual || !v.fim ? '' : new Date(v.fim).toLocaleTimeString('pt-BR',{timeStyle:'short'}),
+    v.origem, v.destino, String(v.km).replace('.',','),
+    v.fim && !v.manual ? fmtDur(new Date(v.fim)-new Date(v.inicio)) : '',
+    v.rotaId ? 'Rota salva' : v.manual ? 'Manual' : 'GPS'
+  ]));
+  const csv = '\uFEFF' + linhas.map(l=>l.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\r\n');
+  baixar(`viagens-${hojeKey()}.csv`, csv, 'text/csv');
+  toast('Planilha salva nos downloads');
+}
+
+/* =====================================================================
+   MINHAS ROTAS: caminhos desenhados no mapa e salvos para reusar
+   ===================================================================== */
+const COR_SALVA = '#7C3AED';
+const camadaSalva = L.layerGroup().addTo(map);
+const camadaDesenho = L.layerGroup().addTo(map);
+const salva = id => R.salvas.find(x=>x.id===id);
+const nomeSalva = s => `${s.origem} → ${s.destino}`;
+const linhaSalva = s => s.tracado && s.tracado.length > 1 ? s.tracado : s.marcos;
+
+function htmlSalvas(){
+  let h = `<h2>Minhas rotas</h2>`;
+  if(!R.salvas.length) h += `<p class="muted" style="margin:0 0 14px;line-height:1.45">Desenhe no mapa os caminhos que você usa para chegar nos destinos, como Casa → Parauapebas. Depois é só abrir a rota e acompanhar.</p>`;
+  else h += `<ul class="list">${R.salvas.map(s => `<li><button data-rt="verSalva" data-id="${esc(s.id)}"><span class="traco"></span><span><span class="nm">${esc(nomeSalva(s))}</span><span class="sub">${s.apelido?esc(s.apelido)+', ':''}${s.min?'cerca de '+fmtDur(s.min*60000):'em linha reta'}${R.salvaVisivel===s.id?', no mapa':''}</span></span><span class="dist">${fmtKm(s.km)}</span></button></li>`).join('')}</ul>`;
+  h += `<button class="btn primary block" data-rt="novaSalva" style="margin-top:12px">Nova rota</button>`;
+  return h;
+}
+
+function formSalva(id){
+  const s = id ? salva(id) : {origem:'Casa', destino:R.destinoPadrao, apelido:''};
+  abrirPainel(`<h2>${id?'Renomear rota':'Nova rota'}</h2>
+    <label class="f">Saindo de<input class="inp" id="sOrig" value="${esc(s.origem)}" autocomplete="off"></label>
+    <label class="f">Indo para<input class="inp" id="sDest" value="${esc(s.destino)}" autocomplete="off"></label>
+    <label class="f">Apelido (opcional)<input class="inp" id="sApel" value="${esc(s.apelido)}" placeholder="Ex.: pela PA-275" autocomplete="off"></label>
+    ${id?'':'<p class="muted" style="font-size:14px;line-height:1.45;margin:12px 0 0">Depois você toca no mapa: primeiro a saída, depois os pontos por onde quer passar e por último o destino. O app traça o caminho pelas ruas.</p>'}
+    <div class="row" style="margin-top:16px">
+      ${id?`<button class="btn grow" data-rt="verSalva" data-id="${esc(id)}">Cancelar</button><button class="btn primary grow" data-rt="renomearOk" data-id="${esc(id)}">Salvar</button>`
+          :`<button class="btn grow" data-rt="aba" data-v="salvas">Cancelar</button><button class="btn primary grow" data-rt="desenharNova">Desenhar no mapa</button>`}
+    </div>`);
+}
+const lerNomeSalva = () => ({origem:$('#sOrig').value.trim()||'Casa', destino:$('#sDest').value.trim()||'Destino', apelido:$('#sApel').value.trim()});
+
+/* ---------- Desenhar no mapa ---------- */
+let desenho = null; // rota sendo desenhada: {id, origem, destino, apelido, marcos, tracado, km, min, porRua, req}
+function iniciarDesenho(dados){
+  desenho = {...dados, marcos:(dados.marcos||[]).map(p=>[...p]), tracado:(dados.tracado||[]).map(p=>[...p]), km:dados.km||0, min:dados.min||null, porRua:dados.porRua!==false, req:0};
+  fecharPainel(); document.body.classList.add('desenhando');
+  camadaSalva.clearLayers();
+  if(desenho.marcos.length > 1) map.fitBounds(L.latLngBounds(linhaSalva(desenho)), {paddingTopLeft:[40,90], paddingBottomRight:[40,220]});
+  else if(minhaPos) map.setView(minhaPos, 13);
+  redesenharDesenho(); atualizarDrawbar();
+}
+function sairDesenho(){
+  const id = desenho && desenho.id;
+  desenho = null; document.body.classList.remove('desenhando'); camadaDesenho.clearLayers(); desenharSalvaVisivel();
+  return id;
+}
+function redesenharDesenho(){
+  camadaDesenho.clearLayers(); if(!desenho) return;
+  if(desenho.tracado.length > 1) L.polyline(desenho.tracado, {color:COR_SALVA, weight:5, opacity:.85, interactive:false}).addTo(camadaDesenho);
+  const n = desenho.marcos.length;
+  desenho.marcos.forEach((p,i) => {
+    const tipo = i===0 ? 'ini' : (i===n-1 ? 'fim' : 'via');
+    const tam = tipo==='via' ? 16 : 22;
+    const m = L.marker(p, {draggable:true, zIndexOffset:900, icon:L.divIcon({className:'', html:`<div class="marco ${tipo}"></div>`, iconSize:[tam,tam], iconAnchor:[tam/2,tam/2]})});
+    m.on('dragend', () => { const ll = m.getLatLng(); desenho.marcos[i] = [+ll.lat.toFixed(5), +ll.lng.toFixed(5)]; tracar(); });
+    m.addTo(camadaDesenho);
+  });
+}
+function addMarco(lat, lng){
+  if(!desenho) return;
+  desenho.marcos.push([+lat.toFixed(5), +lng.toFixed(5)]); tracar();
+}
+// Traça pelas ruas com o OSRM (gratuito, sem chave). Sem internet, liga os pontos em linha reta.
+async function tracar(){
+  if(!desenho) return;
+  const pts = desenho.marcos, meu = ++desenho.req;
+  redesenharDesenho(); atualizarDrawbar();
+  if(pts.length < 2){ desenho.tracado = pts.map(p=>[...p]); desenho.km = 0; desenho.min = null; redesenharDesenho(); atualizarDrawbar(); return; }
+  $('#drawInfo').textContent = 'Traçando pelas ruas…';
+  let ok = false;
+  try{
+    const coords = pts.map(p => `${p[1]},${p[0]}`).join(';');
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`);
+    const j = await r.json();
+    if(!desenho || meu !== desenho.req) return; // chegou uma resposta mais nova
+    const rt = j.code==='Ok' && j.routes && j.routes[0];
+    if(rt){
+      desenho.tracado = simplificar(rt.geometry.coordinates.map(c => [+c[1].toFixed(5), +c[0].toFixed(5)]), 5);
+      desenho.km = Math.round(rt.distance/100)/10; desenho.min = Math.round(rt.duration/60); desenho.porRua = true; ok = true;
+    }
+  }catch(e){ if(!desenho || meu !== desenho.req) return; }
+  if(!ok){
+    let m = 0; for(let i=1;i<pts.length;i++) m += dist(pts[i-1], pts[i]);
+    desenho.tracado = pts.map(p=>[...p]); desenho.km = Math.round(m/100)/10; desenho.min = null; desenho.porRua = false;
+    toast('Não consegui traçar pelas ruas agora. Liguei os pontos em linha reta.');
+  }
+  redesenharDesenho(); atualizarDrawbar();
+}
+function atualizarDrawbar(){
+  if(!desenho) return;
+  const n = desenho.marcos.length;
+  $('#drawTxt').textContent = n===0 ? 'Toque no mapa onde a rota começa.'
+    : n===1 ? 'Agora toque nos pontos por onde quer passar e, por último, no destino.'
+    : 'Cada toque leva a rota até ali. Arraste um ponto para ajustar.';
+  $('#drawInfo').textContent = n>=2 ? `${fmtKm(desenho.km)}${desenho.min?`, cerca de ${fmtDur(desenho.min*60000)}`:', em linha reta'}` : '';
+  $('#drawUndo').disabled = !n; $('#drawOk').disabled = n < 2;
+}
+function salvarDesenho(){
+  const d = desenho; if(!d || d.marcos.length < 2) return;
+  const dados = {origem:d.origem, destino:d.destino, apelido:d.apelido, marcos:d.marcos, tracado:d.tracado, km:d.km, min:d.min, porRua:d.porRua};
+  let id = d.id;
+  if(id && salva(id)) Object.assign(salva(id), dados);
+  else { id = uid(); R.salvas.push({id, criadoEm:new Date().toISOString(), ...dados}); }
+  R.destinoPadrao = d.destino; R.salvaVisivel = id; salvarR();
+  sairDesenho(); verSalva(id); toast('Rota salva');
+}
+map.on('click', e => { if(desenho) addMarco(e.latlng.lat, e.latlng.lng); });
+$('#drawUndo').onclick = () => { if(desenho && desenho.marcos.length){ desenho.marcos.pop(); tracar(); } };
+$('#drawCancel').onclick = () => { const id = sairDesenho(); if(id && salva(id)) verSalva(id); else abrirRotas('salvas'); };
+$('#drawOk').onclick = salvarDesenho;
+
+/* ---------- Ver e acompanhar ---------- */
+function desenharSalvaVisivel(){
+  camadaSalva.clearLayers();
+  const s = R.salvaVisivel && salva(R.salvaVisivel); if(!s) return null;
+  const ll = linhaSalva(s);
+  L.polyline(ll, {color:COR_SALVA, weight:6, opacity:.8, interactive:false}).addTo(camadaSalva);
+  L.circleMarker(ll[0], {radius:7, color:'#fff', weight:3, fillColor:'#1F9D55', fillOpacity:1, interactive:false}).addTo(camadaSalva);
+  L.circleMarker(ll[ll.length-1], {radius:7, color:'#fff', weight:3, fillColor:'#C8372D', fillOpacity:1, interactive:false}).addTo(camadaSalva);
+  return ll;
+}
+function verSalva(id){
+  const s = salva(id); if(!s){ abrirRotas('salvas'); return; }
+  R.salvaVisivel = id; salvarR();
+  const ll = desenharSalvaVisivel();
+  if(ll && seguindo !== id) setTimeout(() => enquadrarLinha(ll), 0); // depois do painel abrir, para saber a altura dele
+  const seg = seguindo === id;
+  abrirPainel(`<h2>${esc(nomeSalva(s))}</h2>
+    ${s.apelido?`<p class="muted" style="margin:0 0 4px">${esc(s.apelido)}</p>`:''}
+    <div class="live"><div><b>${fmtKm(s.km)}</b><span>de percurso</span></div><div><b>${s.min?fmtDur(s.min*60000):'—'}</b><span>${s.min?'estimados':'em linha reta'}</span></div></div>
+    <p class="muted" style="font-size:14px;margin:0 0 12px;line-height:1.45">${s.porRua?'Traçada pelas ruas.':'Ligada em linha reta porque não havia internet ao criar. Use "Editar caminho" para traçar de novo.'} Saída em verde, chegada em vermelho.</p>
+    <button class="btn primary block" data-rt="${seg?'pararSeguir':'seguir'}" data-id="${esc(id)}">${seg?'Parar de acompanhar':'Acompanhar no mapa'}</button>
+    <button class="btn block" data-rt="fizSalva" data-id="${esc(id)}" style="margin-top:8px">Fiz esta rota hoje</button>
+    <div class="row" style="margin-top:8px"><button class="btn grow" data-rt="editarSalva" data-id="${esc(id)}">Editar caminho</button><button class="btn grow" data-rt="renomearSalva" data-id="${esc(id)}">Renomear</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn grow" data-rt="ocultarSalva">Tirar do mapa</button><button class="btn danger grow" data-rt="apagarSalva" data-id="${esc(id)}">Apagar rota</button></div>
+    <button class="btn block" data-rt="aba" data-v="salvas" style="margin-top:8px">Voltar</button>`);
+}
+
+let seguindo = null, watchSeguir = null, arrastouEm = 0;
+map.on('dragstart', () => { arrastouEm = Date.now(); });
+function seguir(id){
+  if(!navigator.geolocation){ toast('Este navegador não oferece GPS.'); return; }
+  pararSeguir(true);
+  seguindo = id; R.salvaVisivel = id; salvarR(); desenharSalvaVisivel();
+  watchSeguir = navigator.geolocation.watchPosition(p => {
+    if(p.coords.accuracy > 100) return;
+    minhaPos = [p.coords.latitude, p.coords.longitude]; mostrarMinhaPos();
+    // Se você mexeu no mapa, espera 15 s antes de voltar a centralizar em você
+    if(Date.now() - arrastouEm > 15000) map.setView(minhaPos, Math.max(map.getZoom(), 14));
+    atualizarSegue();
+  }, err => { if(err.code===1) toast('Permita o acesso à localização para acompanhar a rota.'); },
+  {enableHighAccuracy:true, maximumAge:5000, timeout:30000});
+  pedirTelaLigada(); atualizarSegue(); fecharPainel();
+  toast('Acompanhando a rota. Deixe a tela ligada.');
+}
+function pararSeguir(silencioso){
+  if(watchSeguir !== null){ navigator.geolocation.clearWatch(watchSeguir); watchSeguir = null; }
+  const estava = seguindo; seguindo = null; $('#segue').classList.remove('show');
+  if(!R.viagemAtiva){ try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock = null; }
+  if(estava && !silencioso) toast('Parou de acompanhar');
+}
+// Quanto falta: projeta sua posição no trecho mais próximo e soma dali até o fim
+function faltaNaRota(s){
+  const ll = linhaSalva(s); if(!minhaPos || ll.length < 2) return null;
+  const kx = 111320*Math.cos(minhaPos[0]*Math.PI/180), ky = 110540;
+  const px = minhaPos[1]*kx, py = minhaPos[0]*ky;
+  let melhor = {d:Infinity, i:0, t:0};
+  for(let i=0;i<ll.length-1;i++){
+    const ax = ll[i][1]*kx, ay = ll[i][0]*ky, dx = ll[i+1][1]*kx-ax, dy = ll[i+1][0]*ky-ay, L2 = dx*dx+dy*dy;
+    let t = L2 ? ((px-ax)*dx + (py-ay)*dy)/L2 : 0; t = Math.max(0, Math.min(1, t));
+    const d = Math.hypot(px-ax-t*dx, py-ay-t*dy);
+    if(d < melhor.d) melhor = {d, i, t};
+  }
+  let m = dist(ll[melhor.i], ll[melhor.i+1]) * (1-melhor.t);
+  for(let i=melhor.i+1;i<ll.length-1;i++) m += dist(ll[i], ll[i+1]);
+  return {km:m/1000, fora:melhor.d > 300};
+}
+function atualizarSegue(){
+  const s = seguindo && salva(seguindo); if(!s){ $('#segue').classList.remove('show'); return; }
+  const f = faltaNaRota(s);
+  $('#segueTxt').textContent = !f ? `Acompanhando: ${nomeSalva(s)}`
+    : f.fora ? 'Você está fora da rota' : f.km < .1 ? `Chegou em ${s.destino}` : `Faltam ${fmtKm(f.km)} até ${s.destino}`;
+  $('#segue').classList.add('show');
+}
+$('#segue').onclick = () => { if(seguindo) verSalva(seguindo); };
+
+/* ---------- Fiz esta rota hoje ---------- */
+function formFizSalva(id){
+  const sel = id || (R.salvas[0] && R.salvas[0].id);
+  abrirPainel(`<h2>Fiz uma das minhas rotas</h2>
+    <p class="muted" style="margin:0 0 4px;line-height:1.45">Registra a viagem com os km da rota salva, sem precisar gravar pelo GPS.</p>
+    <label class="f">Rota<select class="inp" id="fzRota">${R.salvas.map(s => `<option value="${esc(s.id)}"${s.id===sel?' selected':''}>${esc(nomeSalva(s))}${s.apelido?` (${esc(s.apelido)})`:''}, ${fmtKm(s.km)}</option>`).join('')}</select></label>
+    <label class="f">Data<input class="inp" id="fzData" type="date" value="${hojeKey()}" max="${hojeKey()}"></label>
+    <label class="check"><input type="checkbox" id="fzVolta"> Ida e volta (conta os km em dobro)</label>
+    <div class="row" style="margin-top:16px"><button class="btn grow" data-rt="aba" data-v="viagem">Cancelar</button><button class="btn primary grow" data-rt="salvarFiz">Registrar viagem</button></div>`);
+}
+function salvarFiz(){
+  const s = salva($('#fzRota').value); if(!s) return;
+  const volta = $('#fzVolta').checked, dia = $('#fzData').value || hojeKey();
+  const km = Math.round(s.km*(volta?2:1)*10)/10;
+  R.viagens.push({id:uid(), origem:s.origem, destino:s.destino+(volta?' (ida e volta)':''), inicio:new Date(dia+'T12:00:00').toISOString(), km, manual:true, rotaId:s.id, pontos:[]});
+  R.viagens.sort((x,y)=>y.inicio.localeCompare(x.inicio));
+  salvarR(); abrirRotas('viagem'); toast(`Viagem registrada: ${fmtKm(km)}`);
+}
+
+/* ---------- Cliques de Minhas rotas ---------- */
+$('#sheetBody').addEventListener('click', async e => {
+  const b = e.target.closest('[data-rt]'); if(!b) return;
+  const a = b.dataset.rt, id = b.dataset.id;
+  if(a==='novaSalva') formSalva();
+  if(a==='desenharNova') iniciarDesenho({id:null, ...lerNomeSalva()});
+  if(a==='verSalva') verSalva(id);
+  if(a==='renomearSalva') formSalva(id);
+  if(a==='renomearOk'){ Object.assign(salva(id), lerNomeSalva()); salvarR(); verSalva(id); toast('Rota renomeada'); }
+  if(a==='editarSalva'){ if(seguindo===id) pararSeguir(true); iniciarDesenho({...salva(id)}); }
+  if(a==='seguir') seguir(id);
+  if(a==='pararSeguir'){ pararSeguir(); verSalva(id); }
+  if(a==='ocultarSalva'){ pararSeguir(true); R.salvaVisivel = null; salvarR(); camadaSalva.clearLayers(); abrirRotas('salvas'); }
+  if(a==='apagarSalva' && await confirmar('Apagar esta rota? As viagens já registradas com ela continuam no histórico.')){
+    if(seguindo===id) pararSeguir(true);
+    R.salvas = R.salvas.filter(x=>x.id!==id);
+    if(R.salvaVisivel===id){ R.salvaVisivel = null; camadaSalva.clearLayers(); }
+    salvarR(); abrirRotas('salvas'); toast('Rota apagada');
+  }
+  if(a==='fizSalva') formFizSalva(id);
+  if(a==='salvarFiz') salvarFiz();
+});
+
+/* ---------- Cliques do painel de rotas ---------- */
+$('#sheetBody').addEventListener('click', async e => {
+  const b = e.target.closest('[data-rt]'); if(!b) return;
+  const a = b.dataset.rt, r = rotaHoje(false);
+  if(a==='aba') abrirRotas(b.dataset.v);
+  if(a==='selecionar') entrarSelecao();
+  if(a==='filtro'){ const rr = rotaHoje(true); clientes.filter(passaFiltro).forEach(c=>{ if(!rr.paradas.includes(c.id)) rr.paradas.push(c.id); }); salvarR(); otimizarRota(); abrirRotas('dia'); }
+  if(a==='feita' && r){ const id = b.dataset.id; r.feitas = r.feitas.includes(id) ? r.feitas.filter(x=>x!==id) : [...r.feitas, id]; salvarR(); desenharRota(); abrirRotas('dia'); }
+  if(a==='abrir') abrirDetalhe(b.dataset.id);
+  if((a==='sobe'||a==='desce') && r){ const i = +b.dataset.i, j = a==='sobe' ? i-1 : i+1; [r.paradas[i], r.paradas[j]] = [r.paradas[j], r.paradas[i]]; salvarR(); desenharRota(); abrirRotas('dia'); }
+  if(a==='tirar'){ alternarNaRota(b.dataset.id); abrirRotas('dia'); }
+  if(a==='otimizar'){ otimizarRota(); abrirRotas('dia'); }
+  if(a==='limpar' && await confirmar('Apagar a rota de hoje?')){ delete R.rotas[hojeKey()]; salvarR(); desenharRota(); abrirRotas('dia'); }
+  if(a==='repetir'){ const src = R.rotas[b.dataset.k]; const rr = rotaHoje(true); rr.paradas = src.paradas.filter(cli); rr.feitas = []; salvarR(); desenharRota(); abrirRotas('dia'); toast('Rota copiada para hoje'); }
+  if(a==='iniciar') iniciarViagem();
+  if(a==='encerrar' && await confirmar('Encerrar e salvar esta viagem?')) encerrarViagem();
+  if(a==='descartar' && await confirmar('Descartar esta viagem? O percurso gravado será perdido.')){ R.viagemAtiva = null; desligarRastreio(); camadaViagem.clearLayers(); salvarR(); abrirRotas('viagem'); }
+  if(a==='casa') pegarGPS(p => { R.casa = {lat:p.lat, lng:p.lng}; salvarR(); desenharRota(); desenharLugares(); abrirRotas('viagem'); toast('Casa marcada'); });
+  if(a==='manual') formManual();
+  if(a==='salvarManual'){
+    const km = parseFloat(String($('#mKm').value).replace(',','.'));
+    if(!(km>0)){ toast('Informe os quilômetros rodados'); return; }
+    const dia = $('#mData').value || hojeKey();
+    R.viagens.push({id:uid(), origem:$('#mOrig').value.trim()||'Casa', destino:$('#mDest').value.trim()||'Destino', inicio:new Date(dia+'T12:00:00').toISOString(), km:Math.round(km*10)/10, manual:true, pontos:[]});
+    R.viagens.sort((x,y)=>y.inicio.localeCompare(x.inicio));
+    salvarR(); abrirRotas('viagem'); toast('Viagem registrada');
+  }
+  if(a==='verViagem') mostrarViagem(b.dataset.id);
+  if(a==='apagarViagem' && await confirmar('Apagar esta viagem?')){ R.viagens = R.viagens.filter(x=>x.id!==b.dataset.id); camadaViagem.clearLayers(); salvarR(); abrirRotas('viagem'); }
+  if(a==='csv') exportarCSV();
+});
+$('#routeBtn').onclick = () => abrirRotas();
+$('#trip').onclick = () => abrirRotas('viagem');
+
+// Viagem que estava sendo gravada quando o app foi fechado: retoma
+if(R.viagemAtiva){ ligarRastreio(); setTimeout(()=>toast('Viagem em andamento retomada'), 800); }
+desenharRota();
+desenharSalvaVisivel();
+
+/* ================= Início ================= */
+aplicarTema();
+desenhar();
+lembrarBackup();
+avisarMemoria();
+// Pede ao Chrome para não apagar os dados do app quando o celular estiver com pouco espaço
+try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch(e){}
+// Confere se o navegador está deixando guardar dados (aba anônima ou navegador de dentro do WhatsApp/Instagram não guardam)
+function memoriaFunciona(){
+  try{ localStorage.setItem('mapaClientes.teste', '1'); const ok = localStorage.getItem('mapaClientes.teste') === '1'; localStorage.removeItem('mapaClientes.teste'); return ok; }
+  catch(e){ return false; }
+}
+const temAlgo = clientes.length || hoteis.length || R.casa || R.salvas.length || R.viagens.length;
+if(!memoriaFunciona()){
+  setTimeout(() => abrirPainel(`
+    <h2>Este navegador não está guardando os dados</h2>
+    <p style="line-height:1.45;margin:0 0 10px">Tudo o que você cadastrar aqui some quando fechar o app.</p>
+    <p class="muted" style="line-height:1.45;margin:0 0 10px">Isso acontece em <b>aba anônima</b> e quando o site é aberto <b>de dentro do WhatsApp, Instagram ou Facebook</b>.</p>
+    <p style="line-height:1.45;margin:0 0 14px">Abra o endereço direto no <b>Chrome</b>, numa aba normal, e adicione à tela inicial pelo menu ⋮.</p>
+    <button class="btn block" data-l="fechar">Entendi</button>`), 300);
+} else if(clientes.length) enquadrar(clientes);
+else if(temAlgo) enquadrar([...hoteis, ...(R.casa ? [R.casa] : [])]);
+else {
+  setTimeout(() => abrirPainel(`
+    <h2>Seu mapa ainda está vazio</h2>
+    ${nuvem.sb && !nuvem.usuario ? `<p class="muted" style="margin:0 0 10px;line-height:1.45">Já usa o app em outro aparelho? Entre na nuvem para trazer seus dados.</p>
+    <button class="btn dark block" data-n="login" style="margin-bottom:16px">Entrar na nuvem</button>` : ''}
+    <p class="muted" style="margin:0 0 16px;line-height:1.45">Traga os clientes que você já tem no My Maps ou comece cadastrando o primeiro.</p>
+    <button class="btn primary block" id="eImport">Importar do My Maps</button>
+    <button class="btn block" id="eNovo" style="margin-top:8px">Cadastrar primeiro cliente</button>
+    <p class="muted" style="font-size:13px;margin:14px 0 0;line-height:1.45">No My Maps: menu ⋮ ao lado do nome do mapa, "Exportar para KML/KMZ", marque "Exportar como KML" e salve o arquivo.</p>
+  `), 300);
+  document.addEventListener('click', e => {
+    if(e.target.id==='eImport') $('#fileKml').click();
+    if(e.target.id==='eNovo') $('#addBtn').click();
+  });
+}
+</script>
+</body>
+</html>
