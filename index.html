@@ -692,7 +692,7 @@ let meuMarcador = null;
 function ajustarMarcadores(){
   const z = map.getZoom();
   $('#map').classList.toggle('labels', z >= 15);
-  const esc = z >= 17 ? 1.2 : z >= 15 ? 1.05 : z >= 13 ? .6 : .5; // de perto: +50% (pedido do usuário)
+  const esc = z >= 15 ? 1 : z >= 13 ? .6 : .5; // de perto 100% (escolha do usuário)
   $('#map').style.setProperty('--esc', esc);
 }
 map.on('zoomend', ajustarMarcadores);
@@ -2278,7 +2278,7 @@ async function gerarImagensGL(){
 }
 // Mesmo tamanho dos marcadores do Leaflet (ajustarMarcadores). O zoom do MapLibre é o do Leaflet − 1.
 // (o MapLibre exige o "step" do zoom por fora; o aumento de 30% do selecionado vai dentro de cada degrau)
-const tamanhoGL = (comSelecao) => ['step', ['zoom'], ...[.5, 12, .6, 14, 1.05, 16, 1.2].map((v, i) =>
+const tamanhoGL = (comSelecao) => ['step', ['zoom'], ...[.5, 12, .6, 14, 1, 16, 1].map((v, i) =>
   i % 2 ? v : (comSelecao ? ['case', ['==', ['get','sel'], 1], +(v*1.3).toFixed(3), v] : v))];
 const tamanhoComSelecao = tamanhoGL(true);
 const geoClientes = () => ({type:'FeatureCollection', features: clientes.filter(passaFiltro).map(c => ({
@@ -2331,8 +2331,8 @@ function montarGL(){
   if(!g.getLayer('rota')) g.addLayer({id:'rota', type:'line', source:'rota', layout:{'line-cap':'round'},
     paint:{'line-color':escuro() ? '#8FB8FF' : '#14283B', 'line-width':3, 'line-opacity':.75, 'line-dasharray':[2, 2.6]}});
   // Nome à direita da cabeça da gota (a cabeça sobe com o tamanho da gota)
-  if(!g.getLayer('clientes')) g.addLayer(camadaSimbolos('clientes', tamanhoComSelecao, ['step', ['zoom'], ['literal',[1.1,-1.85]], 16, ['literal',[1.25,-2.1]]]));
-  if(!g.getLayer('lugares')) g.addLayer(camadaSimbolos('lugares', tamanhoGL(false), ['step', ['zoom'], ['literal',[1.35,-2.25]], 16, ['literal',[1.5,-2.55]]]));
+  if(!g.getLayer('clientes')) g.addLayer(camadaSimbolos('clientes', tamanhoComSelecao, ['literal',[1.15,-1.75]]));
+  if(!g.getLayer('lugares')) g.addLayer(camadaSimbolos('lugares', tamanhoGL(false), ['literal',[1.45,-2.1]]));
 }
 // Atualiza os dados (filtro, busca, seleção, cadastro...) sem recriar as camadas
 function atualizarGL(){
@@ -2352,7 +2352,7 @@ function linhaRotaGL(pontos){
 function marcadorNoPonto(latlng){
   if(!usarGL || !GL.imagens) return null;
   const p = map.latLngToContainerPoint(latlng), z = map.getZoom();
-  const esc = z >= 17 ? 1.2 : z >= 15 ? 1.05 : z >= 13 ? .6 : .5;
+  const esc = z >= 15 ? 1 : z >= 13 ? .6 : .5;
   const lugares = geoLugares().features, visiveis = clientes.filter(passaFiltro);
   // Primeiro procura onde o dedo caiu exatamente; só se não achar, aceita 6 px de folga
   for(const folga of [0, 6]){
