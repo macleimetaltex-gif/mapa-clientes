@@ -31,7 +31,7 @@
   --bg:#EEF1F5;
   --surface:#FFFFFF;
   --surface-2:#F2F4F8;
-  --glass:rgba(255,255,255,.86);
+  --glass:rgba(255,255,255,.96);
   --ink:#14283B;        /* azul-noite: texto */
   --ink-2:#5A6B7E;      /* texto secundário */
   --line:#E1E6EC;
@@ -63,7 +63,7 @@
   --bg:#0C131B;
   --surface:#16202B;
   --surface-2:#1F2B38;
-  --glass:rgba(20,29,39,.86);
+  --glass:rgba(20,29,39,.96);
   --ink:#E8EEF5;
   --ink-2:#9DADBE;
   --line:#2B3949;
@@ -99,7 +99,7 @@ input[type=date]{color-scheme:inherit}
 .top{position:fixed;top:0;left:0;right:0;z-index:1000;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 6px;pointer-events:none}
 .top > *{pointer-events:auto}
 .searchrow{display:flex;gap:8px;align-items:center}
-.search{flex:1;display:flex;align-items:center;gap:8px;background:var(--glass);-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);
+.search{flex:1;display:flex;align-items:center;gap:8px;background:var(--glass);
   border:1px solid var(--line);border-radius:var(--r-lg);padding:0 6px 0 14px;height:52px;box-shadow:var(--sh-1)}
 .search:focus-within{border-color:var(--go);box-shadow:var(--sh-1),0 0 0 3px var(--go-soft)}
 .search svg{flex:none;opacity:.55}
@@ -108,10 +108,10 @@ input[type=date]{color-scheme:inherit}
 .search input::-webkit-search-cancel-button{display:none}
 .search .clear{border:0;background:var(--surface-2);width:34px;height:34px;border-radius:50%;display:none;font-size:18px;color:var(--ink-2)}
 .search.has .clear{display:grid;place-items:center}
-.iconbtn{flex:none;width:52px;height:52px;border-radius:var(--r-lg);border:1px solid var(--line);background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);display:grid;place-items:center;box-shadow:var(--sh-1)}
+.iconbtn{flex:none;width:52px;height:52px;border-radius:var(--r-lg);border:1px solid var(--line);background:var(--glass);display:grid;place-items:center;box-shadow:var(--sh-1)}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:10px 2px 6px;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 92%,transparent);mask-image:linear-gradient(90deg,#000 92%,transparent)}
 .chips::-webkit-scrollbar{display:none}
-.chip{flex:none;display:flex;align-items:center;gap:6px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);font:600 14px var(--sans);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.chip{flex:none;display:flex;align-items:center;gap:6px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--glass);font:600 14px var(--sans);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .chip .dot{width:10px;height:10px;border-radius:50%;background:var(--c)}
 .chip .n{font-weight:500;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .chip[aria-pressed="true"]{background:var(--inv-bg);border-color:var(--inv-bg);color:var(--inv-fg)}
@@ -129,7 +129,7 @@ input[type=date]{color-scheme:inherit}
 /* Marcadores em forma de gota (estilo Google Maps). A ponta fica no local exato. */
 .pin{position:relative;width:26px;height:35px;transform-origin:50% 100%;transform:scale(var(--esc,.8));transition:transform .15s}
 .pin.grande{width:32px;height:43px}
-.pin svg.gota{display:block;overflow:visible;filter:drop-shadow(0 2px 2px rgba(0,0,0,.4))}
+.pin svg.gota{display:block;overflow:visible}
 .dot.p{position:relative}
 .dot.p::after{content:"P";position:absolute;inset:0;display:grid;place-items:center;font:700 9px/1 var(--sans);color:#fff}
 .list .dot.p{width:20px;height:20px}
@@ -139,10 +139,10 @@ input[type=date]{color-scheme:inherit}
 .hist .res{display:inline-flex;align-items:center;gap:5px;font-weight:600;font-size:14px;margin-bottom:2px}
 .hist .res .dot{width:9px;height:9px;border-radius:50%;background:var(--c)}
 .pin.sel{transform:scale(calc(var(--esc,.8) * 1.3))}
-.pin.sel svg.gota{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 70%,transparent)) drop-shadow(0 2px 2px rgba(0,0,0,.4))}
+.pin.sel svg.gota{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--c) 70%,transparent))}
 /* Nome ao lado da cabeça da gota */
 .pin .lbl{display:none;position:absolute;left:28px;top:13px;transform:translateY(-50%);white-space:nowrap;font:700 calc(13px / var(--esc,.8)) var(--cond);color:var(--ink);
-  text-shadow:0 0 3px var(--halo),0 0 3px var(--halo),0 0 3px var(--halo),0 0 3px var(--halo);pointer-events:none}
+  text-shadow:0 0 2px var(--halo),0 0 3px var(--halo);pointer-events:none}
 #map.labels .pin .lbl{display:block}
 .pin.grande .lbl{left:34px;top:16px}
 /* Ícone pequeno de hotel/casa nas listas e filtros (quadrado arredondado) */
@@ -152,12 +152,14 @@ input[type=date]{color-scheme:inherit}
 .status svg{flex:none}
 #sheetBody.eh-hotel .so-cliente{display:none}
 .chip .lugar.mini{width:20px;height:20px;border-radius:6px;border-width:1.5px}
-.me{width:18px;height:18px;border-radius:50%;background:#2F7BF6;border:3px solid #fff;box-shadow:0 0 0 6px rgba(47,123,246,.22);animation:pulso 2.4s infinite}
-@keyframes pulso{0%{box-shadow:0 0 0 0 rgba(47,123,246,.45)}70%{box-shadow:0 0 0 14px rgba(47,123,246,0)}100%{box-shadow:0 0 0 0 rgba(47,123,246,0)}}
+/* Ponto azul: o pulso anima só transform e opacity (a placa de vídeo faz, sem redesenhar a página) */
+.me{position:relative;width:18px;height:18px;border-radius:50%;background:#2F7BF6;border:3px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.me::before{content:"";position:absolute;inset:-3px;border-radius:50%;background:rgba(47,123,246,.35);z-index:-1;animation:pulso 2.4s ease-out infinite}
+@keyframes pulso{0%{transform:scale(1);opacity:.9}70%{transform:scale(2.6);opacity:0}100%{transform:scale(2.6);opacity:0}}
 
 /* ---------- Botões flutuantes ---------- */
 .fabs{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);z-index:1000;display:flex;flex-direction:column;gap:12px;align-items:center}
-.fabgroup{display:flex;flex-direction:column;background:var(--glass);-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-1);overflow:hidden}
+.fabgroup{display:flex;flex-direction:column;background:var(--glass);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-1);overflow:hidden}
 .fab{width:52px;height:52px;border:0;background:transparent;display:grid;place-items:center;color:var(--ink)}
 .fabgroup .fab + .fab{border-top:1px solid var(--line)}
 .fab.on{background:var(--inv-bg);color:var(--inv-fg)}
@@ -570,6 +572,10 @@ try{
     (glMapa.getStyle()?.layers || []).forEach(l => { if(l['source-layer']==='poi' && glMapa.getLayer(l.id)) glMapa.removeLayer(l.id); });
   });
   glMapa.on('style.load', clarearEscuro);
+  // Fluidez ao arrastar: a ponte Leaflet↔MapLibre reposiciona o fundo e só redesenha no quadro
+  // seguinte, e o fundo "pulava" em relação aos marcadores. redraw() desenha na hora, junto.
+  const transformarGL = camadaLimpa._transformGL;
+  if(transformarGL) camadaLimpa._transformGL = function(gl){ transformarGL.call(this, gl); try{ gl.redraw(); }catch(e){} };
 }catch(e){
   camadaLimpa = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, className:'osm', attribution:'© OpenStreetMap'}).addTo(map);
   $('#map').classList.add('reserva');
@@ -599,7 +605,9 @@ function svgGota(cor, miolo, grande){
   const d = grande ? 'M16 42C16 42 2.5 26.6 2.5 16A13.5 13.5 0 0 1 29.5 16C29.5 26.6 16 42 16 42Z'
                    : 'M13 34C13 34 2 21.6 2 13A11 11 0 0 1 24 13C24 21.6 13 34 13 34Z';
   const [w,h] = grande ? [32,43] : [26,35];
-  return `<svg class="gota" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="${cor}" stroke="#fff" stroke-width="2"/>${miolo}</svg>`;
+  // Sombra desenhada dentro da gota (cópia escura deslocada + mancha na ponta): mesmo efeito do
+  // filter:drop-shadow, mas sem custo para o celular a cada quadro ao arrastar o mapa
+  return `<svg class="gota" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><ellipse cx="${w/2}" cy="${h-1}" rx="${grande?5:4}" ry="1.6" fill="rgba(0,0,0,.28)"/><path d="${d}" transform="translate(.9 1.3)" fill="rgba(0,0,0,.25)"/><path d="${d}" fill="${cor}" stroke="#fff" stroke-width="2"/>${miolo}</svg>`;
 }
 function iconeDe(c){
   const cor = (STATUS[c.status]||STATUS.nao).cor;
