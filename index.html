@@ -1328,7 +1328,7 @@ function converter(c){
 
 /* ================= Fotos (fachada) ================= */
 // Fotos não cabem no localStorage (~5 MB no total): ficam no IndexedDB do aparelho, reduzidas para
-// ~1280 px em JPEG (uns 150 KB). A visita guarda só {id, nuvem?}. Com login, sobem para o Storage do
+// ~800 px em JPEG de qualidade baixa (uns 40–60 KB; só para reconhecer o local). A visita guarda só {id, nuvem?}. Com login, sobem para o Storage do
 // Supabase (depósito "fotos", pasta = id do usuário) e outro aparelho baixa quando for mostrar.
 const FotoDB = (() => {
   let dbP = null;
@@ -1362,7 +1362,7 @@ function mostrarFotos(raiz){
     if(u){ img.src = u; img.hidden = false; } else img.closest('.fachada')?.remove();
   });
 }
-async function reduzirFoto(file, max = 1280, q = .72){
+async function reduzirFoto(file, max = 800, q = .55){ // só para reconhecer o local (pedido do usuário): ~40–60 KB por foto
   let src;
   try{ src = await createImageBitmap(file); }
   catch(e){ src = await new Promise((ok, erro) => { const im = new Image(); im.onload = () => ok(im); im.onerror = erro; im.src = URL.createObjectURL(file); }); }
