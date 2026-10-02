@@ -302,6 +302,12 @@ body.desenhando #map{cursor:crosshair}
 .check{display:flex;align-items:center;gap:10px;margin:16px 0 0;font:500 15px var(--sans)}
 .check input{width:22px;height:22px;accent-color:var(--go);margin:0}
 select.inp{appearance:auto;padding-right:8px}
+/* ---------- Desfazer ---------- */
+.desfazer{position:fixed;left:12px;right:92px;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);z-index:2100;display:none;align-items:center;gap:12px;background:var(--inv-bg);color:var(--inv-fg);border-radius:var(--r-md);padding:8px 8px 8px 16px;box-shadow:var(--sh-2);font:600 15px var(--sans)}
+.desfazer.show{display:flex}
+.desfazer span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.desfazer button{flex:none;height:42px;padding:0 16px;border:0;border-radius:10px;background:color-mix(in srgb,var(--go) 85%,#fff);color:#fff;font:700 15px var(--sans)}
+@media (min-width:720px){.desfazer{left:50%;right:auto;width:420px;transform:translateX(-50%)}}
 /* ---------- Rota por data ---------- */
 .dias{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -2px 12px;padding:2px}
 .dias::-webkit-scrollbar{display:none}
@@ -424,6 +430,7 @@ body.picking .aviso-dia,body.selecting .aviso-dia,body.desenhando .aviso-dia{dis
 <input type="file" id="fileKml" hidden>
 <input type="file" id="fileJson" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="desfazer" id="desfazer" role="status" aria-live="polite"><span id="desfazerTxt"></span><button id="desfazerBtn">Desfazer</button></div>
 <div class="dialogo" id="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="dlgTxt">
   <div class="caixa">
     <p id="dlgTxt"></p>
@@ -457,7 +464,12 @@ const TIPOS = {prospect:'Prospecção', cliente:'Cliente da carteira'};
 const DIAS_ATRASO = 30;
 
 let clientes = carregar();
-let filtro = 'todos';
+// Filtro do topo: o app abre com o último usado (gravado em desenharChips)
+const KEY_FILTRO = 'mapaClientes.filtro';
+let filtro = (() => {
+  try{ const f = localStorage.getItem(KEY_FILTRO); return ['todos','lugares','prospect','atraso', ...Object.keys(STATUS)].includes(f) ? f : 'todos'; }
+  catch(e){ return 'todos'; }
+})();
 let busca = '';
 let selId = null;
 let minhaPos = null;
@@ -691,6 +703,7 @@ function desenhar(){
 
 /* ================= Filtros ================= */
 function desenharChips(){
+  try{ localStorage.setItem(KEY_FILTRO, filtro); }catch(e){}
   const cont = {todos:clientes.length, atraso:clientes.filter(atrasado).length, prospect:clientes.filter(ehP).length};
   Object.keys(STATUS).forEach(k => cont[k] = clientes.filter(c=>c.status===k).length);
   const itens = [['todos','Todos',null], ['prospect','Prospecção','var(--tipo)'], ...Object.entries(STATUS).map(([k,s])=>[k,s.label,s.cor]), ['atraso',`${DIAS_ATRASO}+ dias sem visita`,'var(--tipo)']];
@@ -1013,15 +1026,34 @@ function abrirFormulario(pos, id){
       return;
     }
     const dados ={nome, responsavel:$('#fResp').value.trim(), telefone:$('#fTel').value.trim(), endereco:$('#fEnd').value.trim(), obs:$('#fObs').value.trim(), status:statusEscolhido(c.status||'nao'), tipo:tipoEscolhido()};
+    // Cliente repetido: nome igual ou parecido a menos de 300 m
+    if(!id){
+      const n = normal(nome);
+      const parecido = clientes.map(x => ({x, m:map.distance([x.lat,x.lng], [c.lat,c.lng])})).filter(({x, m}) => {
+        const nx = normal(x.nome);
+        return m < 300 && (nx === n || (n.length >= 4 && nx.length >= 4 && (nx.includes(n) || n.includes(nx))));
+      }).sort((a,b) => a.m - b.m)[0];
+      if(parecido && !await confirmar(`Já existe "${parecido.x.nome}" a ${fmtDist(parecido.m/1000)} daqui.\n\nCadastrar outro mesmo assim?`, 'Cadastrar mesmo assim', 'Ver o que já existe')){
+        abrirDetalhe(parecido.x.id); return;
+      }
+    }
     let alvoId = id;
     if(id) Object.assign(c, dados);
     else { alvoId = uid(); clientes.push({id:alvoId, ...dados, origem:dados.tipo, lat:c.lat, lng:c.lng, criadoEm:new Date().toISOString(), visitas:[]}); }
     salvar(); desenhar(); abrirDetalhe(alvoId);
     toast(id ? 'Alterações salvas' : 'Cliente salvo');
   };
-  if(id) $('#fDel').onclick = async () => {
-    if(!await confirmar(`Excluir "${c.nome}"? O histórico de visitas também será apagado.`)) return;
-    clientes = clientes.filter(x=>x.id!==id); salvar(); selId=null; fecharPainel(); desenhar(); toast('Cliente excluído');
+  // Exclui na hora e oferece "Desfazer" (volta com histórico e nas rotas em que estava)
+  if(id) $('#fDel').onclick = () => {
+    const pos = clientes.indexOf(c);
+    const naRota = Object.entries(R.rotas).flatMap(([k,r]) => { const p = r.paradas.indexOf(id); return p < 0 ? [] : [[k, p, r.feitas.includes(id)]]; });
+    clientes = clientes.filter(x=>x.id!==id); salvar(); selId=null; fecharPainel(); desenhar(); desenharRota();
+    avisoDesfazer(`"${c.nome}" excluído`, () => {
+      if(clientes.some(x=>x.id===id)) return;
+      clientes.splice(Math.min(pos, clientes.length), 0, c); salvar();
+      naRota.forEach(([k, p, feita]) => { const r = R.rotas[k]; if(r && !r.paradas.includes(id)){ r.paradas.splice(Math.min(p, r.paradas.length), 0, id); if(feita) r.feitas.push(id); } });
+      salvarR(); desenhar(); desenharRota(); abrirDetalhe(id);
+    });
   };
 }
 async function enderecoAutomatico(lat,lng){
@@ -1068,7 +1100,7 @@ function abrirDetalhe(id){
     <h3>Mudar situação</h3>
     ${segStatus(c.status)}
     <h3>Histórico de visitas</h3>
-    ${visitas.length ? `<ul class="hist">${visitas.map(v=>`<li><span class="when">${fmtData(v.data)}</span><span class="what">${v.resultado&&STATUS[v.resultado]?`<span class="res" style="--c:${STATUS[v.resultado].cor}"><span class="dot"></span>${STATUS[v.resultado].label}</span>\n`:''}${v.nota?esc(v.nota):'<span class="muted">Sem anotação</span>'}</span><button class="x" data-v="${esc(v.data)}" aria-label="Apagar esta visita">×</button></li>`).join('')}</ul>`
+    ${visitas.length ? `<ul class="hist">${visitas.map(v=>`<li><span class="when">${fmtData(v.data)}</span><span class="what">${v.resultado&&STATUS[v.resultado]?`<span class="res" style="--c:${STATUS[v.resultado].cor}"><span class="dot"></span>${STATUS[v.resultado].label}</span>\n`:''}${v.nota?esc(v.nota):'<span class="muted">Sem anotação</span>'}</span><button class="x" data-i="${c.visitas.indexOf(v)}" aria-label="Apagar esta visita">×</button></li>`).join('')}</ul>`
       : '<p class="muted" style="margin:0">Nenhuma visita registrada ainda.</p>'}
     <div class="row" style="margin-top:20px">
       <button class="btn grow" id="dEditar">Editar dados</button>
@@ -1086,9 +1118,15 @@ function abrirDetalhe(id){
   $('#dRota').onclick = () => { const dentro = alternarNaRota(id), dia = rotuloDia(diaSel()); abrirDetalhe(id); toast(dentro ? `Incluído na rota de ${dia}` : `Retirado da rota de ${dia}`); };
   $('#dEditar').onclick = () => abrirFormulario(null, id);
   $('#dFechar').onclick = fecharPainel;
-  document.querySelectorAll('.hist .x').forEach(b => b.onclick = async () => {
-    if(!await confirmar('Apagar esta visita do histórico?')) return;
-    c.visitas = c.visitas.filter(v=>v.data!==b.dataset.v); salvar(); desenhar(); abrirDetalhe(id);
+  // Apaga a visita pela posição (antes era pela data, e duas visitas no mesmo horário saíam juntas)
+  document.querySelectorAll('.hist .x').forEach(b => b.onclick = () => {
+    const i = +b.dataset.i, v = c.visitas[i]; if(!v) return;
+    c.visitas.splice(i, 1); salvar(); desenhar(); abrirDetalhe(id);
+    avisoDesfazer('Visita apagada', () => {
+      const atual = clientes.find(x=>x.id===id); if(!atual) return;
+      atual.visitas = atual.visitas || []; atual.visitas.splice(Math.min(i, atual.visitas.length), 0, v);
+      salvar(); desenhar(); abrirDetalhe(id);
+    });
   });
 }
 
@@ -1406,7 +1444,16 @@ $('#fileJson').addEventListener('change', async e => {
     const lista = Array.isArray(j) ? j : j.clientes;
     if(!Array.isArray(lista)) throw 0;
     if(clientes.length && !await confirmar(`Substituir os ${clientes.length} clientes atuais pelos ${lista.length} do backup?${nuvem.usuario ? '\n\nVocê está conectado à nuvem: ela também vai ficar igual a este backup.' : ''}`)) return;
-    clientes = lista.filter(c => c && isFinite(c.lat) && isFinite(c.lng) && c.nome).map(c => migrar({visitas:[], status:'nao', ...c}));
+    // Identificadores vão para atributos do HTML: um backup adulterado poderia esconder código neles.
+    // Só passam letras, números, "-" e "_"; o resto ganha um identificador novo.
+    const idOk = x => typeof x === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(x);
+    const limparId = o => ({...o, id: idOk(o.id) ? o.id : uid()});
+    clientes = lista.filter(c => c && isFinite(c.lat) && isFinite(c.lng) && c.nome).map(c => migrar({visitas:[], status:'nao', ...limparId(c)}));
+    if(j.rotas && typeof j.rotas === 'object'){
+      if(j.rotas.rotas && typeof j.rotas.rotas === 'object') j.rotas.rotas = Object.fromEntries(Object.entries(j.rotas.rotas).filter(([k]) => /^\d{4}-\d{2}-\d{2}$/.test(k)));
+      ['viagens','salvas'].forEach(n => { if(Array.isArray(j.rotas[n])) j.rotas[n] = j.rotas[n].filter(Boolean).map(limparId); });
+    }
+    if(Array.isArray(j.hoteis)) j.hoteis = j.hoteis.filter(Boolean).map(limparId);
     if(j.rotas && typeof j.rotas==='object'){ R = Object.assign(baseR(), j.rotas, {viagemAtiva:R.viagemAtiva}); salvarR(); }
     if(Array.isArray(j.hoteis)){ hoteis = j.hoteis.filter(h => h && isFinite(h.lat) && isFinite(h.lng) && h.nome); salvarL(); }
     salvar(); filtro='todos'; desenhar(); fecharPainel(); enquadrar(clientes);
@@ -1596,9 +1643,13 @@ $('#sheetBody').addEventListener('click', async e => {
   if(a==='editarHotel') abrirFormHotel(null, id);
   if(a==='salvarHotel') salvarHotel(b);
   if(a==='excluirHotel'){
-    const h = hoteis.find(x=>x.id===id);
-    if(!await confirmar(`Excluir "${h.nome}"?`)) return;
-    hoteis = hoteis.filter(x=>x.id!==id); salvarL(); desenharLugares(); fecharPainel(); toast('Excluído');
+    const h = hoteis.find(x=>x.id===id); if(!h) return;
+    const pos = hoteis.indexOf(h);
+    hoteis = hoteis.filter(x=>x.id!==id); salvarL(); desenharLugares(); desenharChips(); fecharPainel();
+    avisoDesfazer(`"${h.nome}" excluído`, () => {
+      if(hoteis.some(x=>x.id===id)) return;
+      hoteis.splice(Math.min(pos, hoteis.length), 0, h); salvarL(); desenharLugares(); desenharChips(); abrirHotel(id);
+    });
   }
   if(a==='verCasa') abrirCasa();
   if(a==='mudarCasa'){ marcarComo = 'casa'; abrirAdicionar(); }
@@ -2034,6 +2085,16 @@ function confirmar(msg, sim, nao){
     d.onclick = e => { if(e.target === d) fim(false); };
     setTimeout(() => $('#dlgNao').focus(), 50);
   });
+}
+
+/* ================= Desfazer ================= */
+// Excluir acontece na hora; por 7 segundos aparece "Desfazer" (no lugar de perguntar antes)
+let tDesfazer;
+function avisoDesfazer(msg, desfazer){
+  const el = $('#desfazer');
+  $('#desfazerTxt').textContent = msg; el.classList.add('show');
+  clearTimeout(tDesfazer); tDesfazer = setTimeout(() => el.classList.remove('show'), 7000);
+  $('#desfazerBtn').onclick = () => { clearTimeout(tDesfazer); el.classList.remove('show'); desfazer(); toast('Desfeito'); };
 }
 
 /* ================= Aviso ================= */
