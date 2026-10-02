@@ -583,7 +583,7 @@ let meuMarcador = null;
 function ajustarMarcadores(){
   const z = map.getZoom();
   $('#map').classList.toggle('labels', z >= 15);
-  const esc = z >= 17 ? .8 : z >= 15 ? .7 : z >= 13 ? .6 : .5;
+  const esc = z >= 17 ? 1.2 : z >= 15 ? 1.05 : z >= 13 ? .6 : .5; // de perto: +50% (pedido do usuário)
   $('#map').style.setProperty('--esc', esc);
 }
 map.on('zoomend', ajustarMarcadores);
