@@ -571,7 +571,7 @@ try{
   glMapa.on('styledata', () => {
     (glMapa.getStyle()?.layers || []).forEach(l => { if(l['source-layer']==='poi' && glMapa.getLayer(l.id)) glMapa.removeLayer(l.id); });
   });
-  glMapa.on('style.load', clarearEscuro);
+  glMapa.on('style.load', () => { clarearEscuro(); GL.estiloPronto = true; montarGL(); });
   // Fluidez ao arrastar: a ponte Leaflet↔MapLibre reposiciona o fundo e só redesenha no quadro
   // seguinte, e o fundo "pulava" em relação aos marcadores. redraw() desenha na hora, junto.
   const transformarGL = camadaLimpa._transformGL;
@@ -579,6 +579,21 @@ try{
 }catch(e){
   camadaLimpa = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, className:'osm', attribution:'© OpenStreetMap'}).addTo(map);
   $('#map').classList.add('reserva');
+}
+// Com o MapLibre funcionando, clientes, lugares e a linha da rota do dia são desenhados dentro do
+// próprio mapa (andam junto com as ruas ao arrastar). No mapa reserva, viram marcadores do Leaflet.
+const usarGL = !!glMapa;
+var GL = {imagens:null, estiloPronto:false, satelite:false, rota:[]};
+// Girar a tela ou abrir o teclado muda o tamanho do mapa. O Leaflet só percebe pelo evento de
+// redimensionar a janela, que às vezes não chega; vigiando o próprio mapa, o desenho sempre acompanha.
+function ajustarTamanhoMapa(){
+  map.invalidateSize({pan:false});
+  // A ponte com o MapLibre só redimensiona no quadro seguinte; aqui é na hora
+  if(usarGL && camadaLimpa._resizeContainer){ try{ camadaLimpa._resizeContainer(); glMapa.resize(); camadaLimpa._update(); }catch(e){} }
+}
+if(window.ResizeObserver){
+  let tTam;
+  new ResizeObserver(() => { clearTimeout(tTam); tTam = setTimeout(ajustarTamanhoMapa, 100); }).observe($('#map'));
 }
 const camadaSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
   maxZoom:19, attribution:'Imagens © Esri'
@@ -597,7 +612,15 @@ function ajustarMarcadores(){
 }
 map.on('zoomend', ajustarMarcadores);
 ajustarMarcadores();
-map.on('contextmenu', e => { if(!document.body.classList.contains('picking') && !document.body.classList.contains('desenhando')) abrirFormulario({lat:e.latlng.lat, lng:e.latlng.lng}); });
+map.on('contextmenu', e => { if(!document.body.classList.contains('picking') && !document.body.classList.contains('desenhando') && !marcadorNoPonto(e.latlng)) abrirFormulario({lat:e.latlng.lat, lng:e.latlng.lng}); });
+// Toque no mapa: se acertou um marcador desenhado dentro do mapa, age como o toque no marcador
+map.on('click', e => {
+  const f = marcadorNoPonto(e.latlng); if(!f) return;
+  const p = f.properties;
+  if(f.layer.id === 'clientes') cliqueCliente(p.id);
+  else if(p.tipo === 'casa'){ if(R.casa) cliqueLugar(R.casa, abrirCasa); }
+  else { const h = hoteis.find(x=>x.id===p.id); if(h) cliqueLugar(h, () => abrirHotel(h.id)); }
+});
 
 // Gota no estilo Google Maps. Cliente: 26×35 com bolinha branca (ou "P" de prospecção).
 // Hotel e casa ("grande"): 32×43 com o ícone branco dentro. A ponta é o ponto exato do local.
@@ -609,21 +632,30 @@ function svgGota(cor, miolo, grande){
   // filter:drop-shadow, mas sem custo para o celular a cada quadro ao arrastar o mapa
   return `<svg class="gota" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><ellipse cx="${w/2}" cy="${h-1}" rx="${grande?5:4}" ry="1.6" fill="rgba(0,0,0,.28)"/><path d="${d}" transform="translate(.9 1.3)" fill="rgba(0,0,0,.25)"/><path d="${d}" fill="${cor}" stroke="#fff" stroke-width="2"/>${miolo}</svg>`;
 }
+// Miolo da gota do cliente: bolinha branca, ou "P" de prospecção
+const mioloCliente = (cor, prospect) => prospect
+  ? `<circle cx="13" cy="13" r="7.2" fill="#fff"/><text x="13" y="17.1" text-anchor="middle" font-family="Barlow,Arial,sans-serif" font-size="11.5" font-weight="700" fill="${cor}">P</text>`
+  : `<circle cx="13" cy="13" r="4.3" fill="#fff"/>`;
 function iconeDe(c){
   const cor = (STATUS[c.status]||STATUS.nao).cor;
-  const miolo = ehP(c)
-    ? `<circle cx="13" cy="13" r="7.2" fill="#fff"/><text x="13" y="17.1" text-anchor="middle" font-family="Barlow,system-ui,sans-serif" font-size="11.5" font-weight="700" fill="${cor}">P</text>`
-    : `<circle cx="13" cy="13" r="4.3" fill="#fff"/>`;
   return L.divIcon({
     className:'', iconSize:[26,35], iconAnchor:[13,34],
-    html:`<div class="pin${c.id===selId?' sel':''}" style="--c:${cor}">${svgGota(cor, miolo)}<span class="lbl">${esc(c.nome)}</span></div>`
+    html:`<div class="pin${c.id===selId?' sel':''}" style="--c:${cor}">${svgGota(cor, mioloCliente(cor, ehP(c)))}<span class="lbl">${esc(c.nome)}</span></div>`
   });
+}
+// Toque num cliente (vale para o marcador do Leaflet e para o desenhado dentro do mapa)
+function cliqueCliente(id){
+  const c = clientes.find(x=>x.id===id); if(!c) return;
+  if(typeof desenho!=='undefined' && desenho){ addMarco(c.lat, c.lng); return; }
+  if(typeof modoSelecao!=='undefined' && modoSelecao){ const dentro = alternarNaRota(c.id); toast(dentro ? `${c.nome}: incluído` : `${c.nome}: retirado`); }
+  else abrirDetalhe(c.id);
 }
 function desenhar(){
   grupo.clearLayers(); marcadores.clear();
-  clientes.filter(passaFiltro).forEach(c => {
+  if(usarGL) atualizarGL();      // marcadores desenhados dentro do mapa (veja "Marcadores no mapa")
+  else clientes.filter(passaFiltro).forEach(c => {
     const m = L.marker([c.lat,c.lng], {icon:iconeDe(c), title:c.nome, keyboard:true});
-    m.on('click', () => { if(typeof desenho!=='undefined' && desenho){ addMarco(c.lat, c.lng); return; } if(typeof modoSelecao!=='undefined' && modoSelecao){ const dentro = alternarNaRota(c.id); toast(dentro ? `${c.nome}: incluído` : `${c.nome}: retirado`); } else abrirDetalhe(c.id); });
+    m.on('click', () => cliqueCliente(c.id));
     m.addTo(grupo); marcadores.set(c.id, m);
   });
   desenharChips();
@@ -698,7 +730,7 @@ function abrirPainel(html){
 }
 function fecharPainel(){
   document.body.classList.remove('sheet-open');
-  if(selId){ const id = selId; selId = null; const c = clientes.find(x=>x.id===id); const m = marcadores.get(id); if(c && m) m.setIcon(iconeDe(c)); }
+  if(selId){ const id = selId; selId = null; const c = clientes.find(x=>x.id===id); const m = marcadores.get(id); if(c && m) m.setIcon(iconeDe(c)); if(usarGL) atualizarGL(); }
 }
 $('#scrim').onclick = fecharPainel;
 document.addEventListener('keydown', e => { if(e.key==='Escape'){ if($('#dialogo').classList.contains('show')) $('#dlgNao').click(); else if(document.body.classList.contains('picking')) sairModoMarcar(); else if(document.body.classList.contains('desenhando')) $('#drawCancel').click(); else fecharPainel(); }});
@@ -968,6 +1000,7 @@ function abrirDetalhe(id){
   const c = clientes.find(x=>x.id===id); if(!c) return;
   const antigo = selId; selId = id;
   [antigo,id].forEach(k => { const cc = clientes.find(x=>x.id===k), m = marcadores.get(k); if(cc && m) m.setIcon(iconeDe(cc)); });
+  if(usarGL) atualizarGL();
   const s = STATUS[c.status]||STATUS.nao;
   const ult = ultimaVisita(c), d = diasDesde(ult);
   const tel = (c.telefone||'').replace(/\D/g,'');
@@ -1342,6 +1375,16 @@ $('#fileJson').addEventListener('change', async e => {
 
 /* ================= Camadas ================= */
 $('#layerBtn').onclick = () => {
+  // Com MapLibre, o satélite entra como camada dentro do mesmo mapa (antes o mapa limpo era
+  // removido e recriado, e o app perdia a ligação com ele: tema e cores do escuro paravam)
+  if(usarGL){
+    GL.satelite = !GL.satelite;
+    if(GL.estiloPronto){ aplicarSatelite(); corTextoGL(); }
+    map.attributionControl[GL.satelite ? 'addAttribution' : 'removeAttribution']('Imagens © Esri');
+    $('#layerBtn').classList.toggle('on', GL.satelite);
+    toast(GL.satelite ? 'Satélite' : 'Mapa limpo');
+    return;
+  }
   const sat = map.hasLayer(camadaSat);
   if(sat){ map.removeLayer(camadaSat); camadaLimpa.addTo(map); toast('Mapa limpo'); }
   else { map.removeLayer(camadaLimpa); camadaSat.addTo(map); toast('Satélite'); }
@@ -1362,18 +1405,19 @@ const LUGAR = {
   casa: {cor:'#14283B', rotulo:'Minha casa', svg:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>'}
 };
 const svgLugar = (tipo, tam=18, cor='#fff') => `<svg width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="${cor}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${LUGAR[tipo].svg}</svg>`;
+// Ícone de 24 reduzido para 15 px e centralizado na cabeça da gota grande (centro em 16,16)
+const mioloLugar = tipo => `<g transform="translate(8.5 8.5) scale(.625)" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${LUGAR[tipo].svg}</g>`;
 function iconeLugar(tipo, nome){
   const cor = LUGAR[tipo].cor;
-  // Ícone de 24 reduzido para 15 px e centralizado na cabeça da gota (centro em 16,16)
-  const miolo = `<g transform="translate(8.5 8.5) scale(.625)" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${LUGAR[tipo].svg}</g>`;
   return L.divIcon({className:'', iconSize:[32,43], iconAnchor:[16,42],
-    html:`<div class="pin grande" style="--c:${cor}">${svgGota(cor, miolo, true)}<span class="lbl">${esc(nome)}</span></div>`});
+    html:`<div class="pin grande" style="--c:${cor}">${svgGota(cor, mioloLugar(tipo), true)}<span class="lbl">${esc(nome)}</span></div>`});
 }
 const camadaLugares = L.layerGroup().addTo(map);
 const hotelNaBusca = h => !busca || normal(h.nome+' '+(h.endereco||'')+' '+(h.obs||'')).includes(busca);
 
 function desenharLugares(){
   camadaLugares.clearLayers();
+  if(usarGL){ atualizarGL(); return; }
   hoteis.filter(hotelNaBusca).forEach(h => {
     L.marker([h.lat,h.lng], {icon:iconeLugar('hotel', h.nome), title:h.nome, zIndexOffset:500})
       .on('click', () => cliqueLugar(h, () => abrirHotel(h.id))).addTo(camadaLugares);
@@ -1741,6 +1785,126 @@ if(nuvem.sb){
   setInterval(() => { if(document.visibilityState==='visible') sincronizar(); }, 5*60000);
 }
 
+/* ================= Marcadores no mapa (MapLibre) ================= */
+// Com 200+ clientes, marcadores como elementos da página andavam atrasados em relação às ruas ao
+// arrastar. Aqui eles são camadas do próprio MapLibre: um desenho só, que se move junto.
+// As gotas são as mesmas (svgGota), transformadas em imagens uma vez ao abrir o app.
+const DPR_GL = 3; // imagens em 3x para ficarem nítidas em qualquer celular
+async function gerarImagensGL(){
+  if(!usarGL) return;
+  const lista = [];
+  Object.entries(STATUS).forEach(([k,s]) => {
+    lista.push(['c-'+k, svgGota(s.cor, mioloCliente(s.cor, false)), 26, 35]);
+    lista.push(['p-'+k, svgGota(s.cor, mioloCliente(s.cor, true)), 26, 35]);
+  });
+  Object.keys(LUGAR).forEach(t => lista.push(['l-'+t, svgGota(LUGAR[t].cor, mioloLugar(t), true), 32, 43]));
+  const imgs = {};
+  await Promise.all(lista.map(([nome, svg, w, h]) => new Promise(ok => {
+    const im = new Image();
+    im.onload = () => {
+      const cv = document.createElement('canvas'); cv.width = w*DPR_GL; cv.height = h*DPR_GL;
+      const cx = cv.getContext('2d'); cx.drawImage(im, 0, 0, cv.width, cv.height);
+      imgs[nome] = cx.getImageData(0, 0, cv.width, cv.height); ok();
+    };
+    im.onerror = () => ok();
+    im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '));
+  })));
+  GL.imagens = imgs;
+  montarGL();
+}
+// Mesmo tamanho dos marcadores do Leaflet (ajustarMarcadores). O zoom do MapLibre é o do Leaflet − 1.
+// (o MapLibre exige o "step" do zoom por fora; o aumento de 30% do selecionado vai dentro de cada degrau)
+const tamanhoGL = (comSelecao) => ['step', ['zoom'], ...[.5, 12, .6, 14, 1.05, 16, 1.2].map((v, i) =>
+  i % 2 ? v : (comSelecao ? ['case', ['==', ['get','sel'], 1], +(v*1.3).toFixed(3), v] : v))];
+const tamanhoComSelecao = tamanhoGL(true);
+const geoClientes = () => ({type:'FeatureCollection', features: clientes.filter(passaFiltro).map(c => ({
+  type:'Feature', geometry:{type:'Point', coordinates:[c.lng, c.lat]},
+  // ordem: quem está mais ao sul fica na frente; o selecionado fica na frente de todos
+  properties:{id:c.id, nome:c.nome, icone:(ehP(c)?'p-':'c-') + (STATUS[c.status] ? c.status : 'nao'), sel:c.id===selId ? 1 : 0, ordem:c.id===selId ? 1e6 : -c.lat*1000}
+}))});
+const geoLugares = () => ({type:'FeatureCollection', features: [
+  ...hoteis.filter(hotelNaBusca).map(h => ({type:'Feature', geometry:{type:'Point', coordinates:[h.lng, h.lat]}, properties:{id:h.id, tipo:'hotel', nome:h.nome, icone:'l-hotel'}})),
+  ...(R.casa ? [{type:'Feature', geometry:{type:'Point', coordinates:[R.casa.lng, R.casa.lat]}, properties:{id:'casa', tipo:'casa', nome:'Minha casa', icone:'l-casa'}}] : [])
+]});
+const geoRota = () => ({type:'FeatureCollection', features: GL.rota.length > 1 ? [{type:'Feature', geometry:{type:'LineString', coordinates:GL.rota.map(p => [p[1], p[0]])}, properties:{}}] : []});
+// Texto do nome: escuro no tema claro, claro no tema escuro e no satélite
+function coresTextoGL(){ return (escuro() || GL.satelite) ? {'text-color':'#F2F5F8', 'text-halo-color':'rgba(12,19,27,.9)'} : {'text-color':'#14283B', 'text-halo-color':'#FFFFFF'}; }
+function corTextoGL(){
+  if(!GL.estiloPronto) return;
+  ['clientes','lugares'].forEach(id => { if(glMapa.getLayer(id)) Object.entries(coresTextoGL()).forEach(([k,v]) => glMapa.setPaintProperty(id, k, v)); });
+}
+function camadaSimbolos(id, tamanho, deslocText){
+  return {id, type:'symbol', source:id, layout:{
+    'icon-image':['get','icone'], 'icon-anchor':'bottom', 'icon-size':tamanho,
+    'icon-allow-overlap':true, 'icon-ignore-placement':true,
+    'symbol-sort-key':['coalesce', ['get','ordem'], 0],
+    // Nome só de perto (zoom 15 do Leaflet). Se dois nomes se encostam, um some; as gotas ficam todas.
+    'text-field':['step', ['zoom'], '', 14, ['get','nome']],
+    'text-font':['Noto Sans Bold'], 'text-size':12.5, 'text-anchor':'left', 'text-justify':'left',
+    'text-offset':deslocText, 'text-optional':true, 'text-max-width':14
+  }, paint:{...coresTextoGL(), 'text-halo-width':1.6}};
+}
+function aplicarSatelite(){
+  if(!GL.estiloPronto) return;
+  const g = glMapa;
+  if(GL.satelite){
+    if(!g.getSource('esri')) g.addSource('esri', {type:'raster', tileSize:256, maxzoom:19,
+      tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}']});
+    // Fica por cima do mapa limpo e por baixo da rota e dos marcadores
+    const antes = ['rota','clientes','lugares'].find(id => g.getLayer(id));
+    if(!g.getLayer('satelite')) g.addLayer({id:'satelite', type:'raster', source:'esri'}, antes);
+  } else if(g.getLayer('satelite')) g.removeLayer('satelite');
+}
+// Coloca imagens, fontes de dados e camadas (de novo após trocar o tema, que recarrega o estilo)
+function montarGL(){
+  if(!usarGL || !GL.imagens || !GL.estiloPronto) return;
+  const g = glMapa;
+  Object.entries(GL.imagens).forEach(([n, d]) => { if(!g.hasImage(n)) g.addImage(n, d, {pixelRatio:DPR_GL}); });
+  aplicarSatelite();
+  if(!g.getSource('rota')) g.addSource('rota', {type:'geojson', data:geoRota()});
+  if(!g.getSource('clientes')) g.addSource('clientes', {type:'geojson', data:geoClientes()});
+  if(!g.getSource('lugares')) g.addSource('lugares', {type:'geojson', data:geoLugares()});
+  if(!g.getLayer('rota')) g.addLayer({id:'rota', type:'line', source:'rota', layout:{'line-cap':'round'},
+    paint:{'line-color':escuro() ? '#8FB8FF' : '#14283B', 'line-width':3, 'line-opacity':.75, 'line-dasharray':[2, 2.6]}});
+  // Nome à direita da cabeça da gota (a cabeça sobe com o tamanho da gota)
+  if(!g.getLayer('clientes')) g.addLayer(camadaSimbolos('clientes', tamanhoComSelecao, ['step', ['zoom'], ['literal',[1.1,-1.85]], 16, ['literal',[1.25,-2.1]]]));
+  if(!g.getLayer('lugares')) g.addLayer(camadaSimbolos('lugares', tamanhoGL(false), ['step', ['zoom'], ['literal',[1.35,-2.25]], 16, ['literal',[1.5,-2.55]]]));
+}
+// Atualiza os dados (filtro, busca, seleção, cadastro...) sem recriar as camadas
+function atualizarGL(){
+  if(!usarGL) return;
+  if(!GL.estiloPronto || !glMapa.getSource('clientes')){ montarGL(); return; }
+  glMapa.getSource('clientes').setData(geoClientes());
+  glMapa.getSource('lugares').setData(geoLugares());
+}
+function linhaRotaGL(pontos){
+  if(!usarGL) return;
+  GL.rota = pontos;
+  if(GL.estiloPronto && glMapa.getSource('rota')) glMapa.getSource('rota').setData(geoRota());
+}
+// Qual marcador (cliente ou lugar) está no ponto tocado. Conta direta pela posição de cada gota na
+// tela (não depende do MapLibre já ter redesenhado depois de mover o mapa), com 6 px de folga.
+// Se houver gotas sobrepostas, vale a que está desenhada por cima: lugares, selecionado, mais ao sul.
+function marcadorNoPonto(latlng){
+  if(!usarGL || !GL.imagens) return null;
+  const p = map.latLngToContainerPoint(latlng), z = map.getZoom();
+  const esc = z >= 17 ? 1.2 : z >= 15 ? 1.05 : z >= 13 ? .6 : .5;
+  const lugares = geoLugares().features, visiveis = clientes.filter(passaFiltro);
+  // Primeiro procura onde o dedo caiu exatamente; só se não achar, aceita 6 px de folga
+  for(const folga of [0, 6]){
+    const dentro = (lat, lng, w, h, s) => {
+      const t = map.latLngToContainerPoint([lat, lng]);
+      return Math.abs(p.x - t.x) <= w*s/2 + folga && p.y <= t.y + folga && p.y >= t.y - h*s - folga;
+    };
+    const lugar = lugares.find(f => dentro(f.geometry.coordinates[1], f.geometry.coordinates[0], 32, 43, esc));
+    if(lugar) return {layer:{id:'lugares'}, properties:lugar.properties};
+    const cliente = visiveis.filter(c => dentro(c.lat, c.lng, 26, 35, esc * (c.id===selId ? 1.3 : 1)))
+      .sort((a,b) => (b.id===selId) - (a.id===selId) || a.lat - b.lat)[0];
+    if(cliente) return {layer:{id:'clientes'}, properties:{id:cliente.id}};
+  }
+  return null;
+}
+
 /* ================= Tema claro / escuro ================= */
 const KEY_TEMA = 'mapaClientes.tema';
 const prefTema = () => { try{ return localStorage.getItem(KEY_TEMA) || 'auto'; }catch(e){ return 'auto'; } };
@@ -1752,7 +1916,9 @@ function aplicarTema(){
   document.documentElement.dataset.tema = novo;
   $('#metaTema').setAttribute('content', novo==='escuro' ? '#0C131B' : '#EEF1F5');
   if(!mudou) return;
-  if(glMapa) glMapa.setStyle(estiloMapa());
+  // diff:false recarrega o estilo inteiro e garante o evento 'style.load', onde os marcadores
+  // desenhados dentro do mapa, o satélite e as cores do escuro são recolocados
+  if(glMapa){ GL.estiloPronto = false; glMapa.setStyle(estiloMapa(), {diff:false}); }
   desenharRota();
 }
 function definirTema(p){
@@ -1888,12 +2054,17 @@ let trilhaAtiva = null;
 
 function desenharRota(){
   camadaRota.clearLayers();
+  linhaRotaGL([]);
   const r = rotaHoje(false); if(!r || !r.paradas.length) return;
   const cs = r.paradas.map(cli);
   const pend = cs.filter(c=>!r.feitas.includes(c.id));
   const linha = pend.map(c=>[c.lat,c.lng]);
   const ini = pontoInicio(); if(ini && linha.length) linha.unshift(ini);
-  if(linha.length > 1) L.polyline(linha, {color:escuro() ? '#8FB8FF' : '#14283B', weight:3, opacity:.75, dashArray:'7 8', interactive:false}).addTo(camadaRota);
+  // Com MapLibre, a linha vai dentro do mapa, por baixo das gotas
+  if(linha.length > 1){
+    if(usarGL) linhaRotaGL(linha);
+    else L.polyline(linha, {color:escuro() ? '#8FB8FF' : '#14283B', weight:3, opacity:.75, dashArray:'7 8', interactive:false}).addTo(camadaRota);
+  }
   cs.forEach((c,i) => L.marker([c.lat,c.lng], {
     icon:L.divIcon({className:'', html:`<div class="num${r.feitas.includes(c.id)?' ok':''}">${r.feitas.includes(c.id)?'✓':i+1}</div>`, iconSize:[20,20], iconAnchor:[-2,42]}),
     interactive:false, zIndexOffset:800
@@ -2258,7 +2429,7 @@ function salvarDesenho(){
   R.destinoPadrao = d.destino; R.salvaVisivel = id; salvarR();
   sairDesenho(); verSalva(id); toast('Rota salva');
 }
-map.on('click', e => { if(desenho) addMarco(e.latlng.lat, e.latlng.lng); });
+map.on('click', e => { if(desenho && !marcadorNoPonto(e.latlng)) addMarco(e.latlng.lat, e.latlng.lng); });
 $('#drawUndo').onclick = () => { if(desenho && desenho.marcos.length){ desenho.marcos.pop(); tracar(); } };
 $('#drawCancel').onclick = () => { const id = sairDesenho(); if(id && salva(id)) verSalva(id); else abrirRotas('salvas'); };
 $('#drawOk').onclick = salvarDesenho;
@@ -2423,6 +2594,7 @@ desenharSalvaVisivel();
 // Service worker: só para o Chrome oferecer "Instalar app" (não guarda cache; veja sw.js)
 if('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 aplicarTema();
+gerarImagensGL();
 desenhar();
 lembrarBackup();
 avisarMemoria();
