@@ -302,6 +302,20 @@ body.desenhando #map{cursor:crosshair}
 .check{display:flex;align-items:center;gap:10px;margin:16px 0 0;font:500 15px var(--sans)}
 .check input{width:22px;height:22px;accent-color:var(--go);margin:0}
 select.inp{appearance:auto;padding-right:8px}
+/* ---------- Rota por data ---------- */
+.dias{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -2px 12px;padding:2px}
+.dias::-webkit-scrollbar{display:none}
+.dias button,.dias .cal{flex:none;position:relative;width:52px;height:60px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--ink)}
+.dias small{font:600 12px var(--sans);color:var(--ink-2)}
+.dias b{font:700 20px/1 var(--cond)}
+.dias i{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:var(--go);color:#fff;font:700 11px/19px var(--sans);font-style:normal;text-align:center;border:2px solid var(--surface)}
+.dias button[aria-pressed="true"]{background:var(--inv-bg);border-color:var(--inv-bg);color:var(--inv-fg)}
+.dias button[aria-pressed="true"] small{color:inherit;opacity:.75}
+.dias .cal{cursor:pointer;color:var(--ink-2)}
+.dias .cal input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.aviso-dia{position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 26px);z-index:1001;display:none;align-items:center;gap:8px;max-width:calc(100% - 110px);background:var(--inv-bg);color:var(--inv-fg);border:0;border-radius:999px;padding:10px 14px;font:600 14px var(--sans);box-shadow:var(--sh-2);text-align:left}
+.aviso-dia.show{display:flex}
+body.picking .aviso-dia,body.selecting .aviso-dia,body.desenhando .aviso-dia{display:none}
 /* ---------- Confirmação ---------- */
 .dialogo{position:fixed;inset:0;z-index:3000;display:none;place-items:center;padding:16px;background:var(--scrim)}
 .dialogo.show{display:grid}
@@ -383,7 +397,8 @@ select.inp{appearance:auto;padding-right:8px}
   </div>
 </div>
 
-<div class="selbar" role="dialog" aria-label="Montar rota de hoje">
+<button class="aviso-dia" id="avisoDia"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span id="avisoDiaTxt"></span></button>
+<div class="selbar" role="dialog" aria-label="Montar rota do dia">
   <p id="selTxt"></p>
   <button class="btn primary block" id="selOk">Pronto</button>
 </div>
@@ -1043,8 +1058,8 @@ function abrirDetalhe(id){
     <div class="lastvisit"><b>${textoDias(d)}</b>${ult?` <span class="muted">em ${fmtData(ult)}</span>`:''}</div>
     <button class="btn primary block" id="dVisita">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>Registrar visita</button>
-    ${(()=>{ const r = rotaHoje(false); const i = r ? r.paradas.indexOf(c.id) : -1;
-      return `<button class="btn block" id="dRota" style="margin-top:8px">${i>=0?`Parada ${i+1} da rota de hoje (tirar)`:'Incluir na rota de hoje'}</button>`; })()}
+    ${(()=>{ const r = rotaDoDia(false); const i = r ? r.paradas.indexOf(c.id) : -1, dia = rotuloDia(diaSel());
+      return `<button class="btn block" id="dRota" style="margin-top:8px">${i>=0?`Parada ${i+1} da rota de ${dia} (tirar)`:`Incluir na rota de ${dia}`}</button>`; })()}
     <div class="row" style="margin-top:8px">
       ${tel?`<a class="btn grow" href="tel:${tel}">Ligar</a><a class="btn grow" href="https://wa.me/${wa}" target="_blank" rel="noopener">WhatsApp</a>`:''}
       <a class="btn grow" href="https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}" target="_blank" rel="noopener">Google Maps</a>
@@ -1068,7 +1083,7 @@ function abrirDetalhe(id){
     toast(virou ? 'Comprou! Agora é cliente da carteira' : 'Situação: '+STATUS[c.status].label);
   };
   $('#dVisita').onclick = () => formVisita(id);
-  $('#dRota').onclick = () => { const dentro = alternarNaRota(id); abrirDetalhe(id); toast(dentro ? 'Incluído na rota de hoje' : 'Retirado da rota de hoje'); };
+  $('#dRota').onclick = () => { const dentro = alternarNaRota(id), dia = rotuloDia(diaSel()); abrirDetalhe(id); toast(dentro ? `Incluído na rota de ${dia}` : `Retirado da rota de ${dia}`); };
   $('#dEditar').onclick = () => abrirFormulario(null, id);
   $('#dFechar').onclick = fecharPainel;
   document.querySelectorAll('.hist .x').forEach(b => b.onclick = async () => {
@@ -2044,14 +2059,30 @@ const diaLocal = x => { const d = new Date(x); return new Date(d.getTime()-d.get
 const hojeKey = () => diaLocal(Date.now());
 const fmtDia = k => { const [y,m,d] = k.split('-'); return `${d}/${m}/${y.slice(2)}`; };
 const cli = id => clientes.find(c=>c.id===id);
-function rotaHoje(criar){
-  const k = hojeKey();
+// Rota de visitas por dia (R.rotas['AAAA-MM-DD']). `diaRota` é o dia sendo visto/montado no painel:
+// hoje por padrão, ou um dia futuro para planejar a semana. Dia que já passou volta a ser hoje.
+let diaRota = null;
+const diaSel = () => diaRota && diaRota > hojeKey() ? diaRota : hojeKey();
+const ehHojeSel = () => diaSel() === hojeKey();
+function rotaDoDia(criar, k){
+  k = k || diaSel();
   if(!R.rotas[k] && criar) R.rotas[k] = {paradas:[], feitas:[]};
   const r = R.rotas[k];
   if(r){ r.paradas = r.paradas.filter(cli); r.feitas = r.feitas.filter(id=>r.paradas.includes(id)); }
   return r;
 }
+const rotaHoje = criar => rotaDoDia(criar, hojeKey()); // registrar visita sempre marca a rota de hoje
+const DIAS_SEM = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const dataDe = k => new Date(k + 'T12:00:00');
+// "hoje", "amanhã" ou "sex 03/10"
+function rotuloDia(k){
+  if(k === hojeKey()) return 'hoje';
+  if(k === diaLocal(Date.now() + 864e5)) return 'amanhã';
+  return `${DIAS_SEM[dataDe(k).getDay()].toLowerCase()} ${fmtDia(k).slice(0,5)}`;
+}
 const pontoInicio = () => minhaPos || (R.casa ? [R.casa.lat, R.casa.lng] : null);
+// Para um dia futuro, a rota começa em casa (onde você está agora não importa)
+const inicioDaRota = () => ehHojeSel() ? pontoInicio() : (R.casa ? [R.casa.lat, R.casa.lng] : minhaPos);
 const dist = (a,b) => map.distance(a,b);
 const fmtKm = km => km.toFixed(km < 10 ? 1 : 0).replace('.',',') + ' km';
 function fmtDur(ms){
@@ -2103,11 +2134,12 @@ let trilhaAtiva = null;
 function desenharRota(){
   camadaRota.clearLayers();
   linhaRotaGL([]);
-  const r = rotaHoje(false); if(!r || !r.paradas.length) return;
+  atualizarAvisoDia();
+  const r = rotaDoDia(false); if(!r || !r.paradas.length) return;
   const cs = r.paradas.map(cli);
   const pend = cs.filter(c=>!r.feitas.includes(c.id));
   const linha = pend.map(c=>[c.lat,c.lng]);
-  const ini = pontoInicio(); if(ini && linha.length) linha.unshift(ini);
+  const ini = inicioDaRota(); if(ini && linha.length) linha.unshift(ini);
   // Com MapLibre, a linha vai dentro do mapa, por baixo das gotas
   if(linha.length > 1){
     if(usarGL) linhaRotaGL(linha);
@@ -2120,8 +2152,20 @@ function desenharRota(){
 }
 
 /* ---------- Rota de clientes ---------- */
+// Aviso no mapa enquanto a rota mostrada é de outro dia (tocar volta para hoje)
+function atualizarAvisoDia(){
+  const el = $('#avisoDia'); if(!el) return;
+  const outro = !ehHojeSel();
+  el.classList.toggle('show', outro);
+  if(outro){ const n = (rotaDoDia(false)||{paradas:[]}).paradas.length; $('#avisoDiaTxt').textContent = `Rota de ${rotuloDia(diaSel())}${n ? ` (${n} parada${n===1?'':'s'})` : ''} · toque para voltar a hoje`; }
+}
+$('#avisoDia').onclick = () => {
+  diaRota = null; desenharRota();
+  if(document.body.classList.contains('sheet-open') && $('.dias')) abrirRotas('dia');
+  toast('Mostrando a rota de hoje');
+};
 function alternarNaRota(id){
-  const r = rotaHoje(true);
+  const r = rotaDoDia(true);
   if(r.paradas.includes(id)){ r.paradas = r.paradas.filter(x=>x!==id); r.feitas = r.feitas.filter(x=>x!==id); }
   else r.paradas.push(id);
   salvarR(); desenharRota(); atualizarSelbar();
@@ -2137,10 +2181,10 @@ function custo(ordem, ini){
   return t;
 }
 function otimizarRota(){
-  const r = rotaHoje(false); if(!r) return;
+  const r = rotaDoDia(false); if(!r) return;
   const feitas = r.paradas.filter(id=>r.feitas.includes(id));
   let resto = r.paradas.filter(id=>!r.feitas.includes(id));
-  const ini = pontoInicio();
+  const ini = inicioDaRota();
   // vizinho mais próximo
   const ordem = []; let p = ini || (resto.length ? [cli(resto[0]).lat, cli(resto[0]).lng] : null);
   while(resto.length){
@@ -2159,10 +2203,11 @@ function otimizarRota(){
   }
   r.paradas = [...feitas, ...ordem];
   salvarR(); desenharRota();
-  toast(ini ? (minhaPos ? 'Ordem ajustada a partir de onde você está' : 'Ordem ajustada a partir da sua casa') : 'Ordem ajustada');
+  const deCasa = R.casa && ini && ini[0] === R.casa.lat && ini[1] === R.casa.lng;
+  toast(ini ? (deCasa ? 'Ordem ajustada a partir da sua casa' : 'Ordem ajustada a partir de onde você está') : 'Ordem ajustada');
 }
 function linksGoogle(){
-  const r = rotaHoje(false); if(!r) return [];
+  const r = rotaDoDia(false); if(!r) return [];
   const pend = r.paradas.filter(id=>!r.feitas.includes(id)).map(cli);
   const links = [];
   for(let i=0;i<pend.length;i+=10){
@@ -2181,13 +2226,13 @@ let modoSelecao = false;
 function entrarSelecao(){
   modoSelecao = true; fecharPainel();
   document.body.classList.add('selecting'); atualizarSelbar();
-  const r = rotaHoje(false);
+  const r = rotaDoDia(false);
   if(!(r && r.paradas.length) && clientes.length) enquadrar(clientes.filter(passaFiltro));
 }
 function sairSelecao(){ modoSelecao = false; document.body.classList.remove('selecting'); abrirRotas('dia'); }
 function atualizarSelbar(){
-  const r = rotaHoje(false); const n = r ? r.paradas.length : 0;
-  $('#selTxt').textContent = n ? `${n} parada${n===1?'':'s'} na rota de hoje. Toque nos clientes para incluir ou tirar.` : 'Toque nos clientes que vai visitar hoje.';
+  const r = rotaDoDia(false); const n = r ? r.paradas.length : 0, dia = rotuloDia(diaSel());
+  $('#selTxt').textContent = n ? `${n} parada${n===1?'':'s'} na rota de ${dia}. Toque nos clientes para incluir ou tirar.` : `Toque nos clientes que vai visitar ${dia === 'hoje' || dia === 'amanhã' ? dia : 'em ' + dia}.`;
 }
 $('#selOk').onclick = sairSelecao;
 
@@ -2200,21 +2245,37 @@ function abrirRotas(aba){
     <button role="tab" data-rt="aba" data-v="viagem" aria-selected="${aba==='viagem'}">Viagens</button></div>`;
   abrirPainel(abas + (aba==='dia' ? htmlDia() : aba==='salvas' ? htmlSalvas() : htmlViagem()));
   if(aba==='viagem' && R.viagemAtiva) atualizarAoVivo();
+  if(aba==='dia'){
+    $('#rDia').onchange = e => { if(e.target.value) escolherDia(e.target.value); };
+    // Mantém o dia escolhido visível na faixa
+    const sel = document.querySelector('.dias [aria-pressed="true"]'); if(sel) sel.scrollIntoView({block:'nearest', inline:'center'});
+  }
 }
 
+// Faixa com os próximos 7 dias (e o dia escolhido no calendário, se for depois disso).
+// O número em cada dia é quantas paradas a rota daquele dia já tem.
+function htmlDias(){
+  const dias = Array.from({length:7}, (_, i) => diaLocal(Date.now() + i*864e5));
+  if(!dias.includes(diaSel())) dias.push(diaSel());
+  return `<div class="dias" role="group" aria-label="Dia da rota">${dias.map((k, i) => {
+    const n = (R.rotas[k]?.paradas || []).filter(cli).length, d = dataDe(k);
+    return `<button data-rt="dia" data-k="${k}" aria-pressed="${k===diaSel()}" aria-label="${esc(rotuloDia(k))}${n ? `, ${n} paradas` : ''}"><small>${i===0 ? 'Hoje' : DIAS_SEM[d.getDay()]}</small><b>${d.getDate()}</b>${n ? `<i>${n}</i>` : ''}</button>`;
+  }).join('')}<label class="cal" aria-label="Escolher outra data"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><small>Outro</small><input type="date" id="rDia" min="${hojeKey()}" value="${diaSel()}"></label></div>`;
+}
 function htmlDia(){
-  const r = rotaHoje(false);
-  const hist = Object.keys(R.rotas).filter(k=>k!==hojeKey() && R.rotas[k].paradas.length).sort().reverse().slice(0,10);
+  const r = rotaDoDia(false), dia = rotuloDia(diaSel()), hoje = ehHojeSel();
+  // Rotas de dias que já passaram, para copiar para o dia escolhido
+  const hist = Object.keys(R.rotas).filter(k=>k<hojeKey() && R.rotas[k].paradas.length).sort().reverse().slice(0,10);
   const nFiltro = filtro!=='todos' ? clientes.filter(passaFiltro).length : 0;
-  let h = `<h2>Visitas de hoje <span class="muted" style="font-weight:600;font-size:18px">${fmtDia(hojeKey())}</span></h2>`;
+  let h = htmlDias() + `<h2>Rota de ${dia} <span class="muted" style="font-weight:600;font-size:18px">${hoje ? fmtDia(hojeKey()) : (dia==='amanhã' ? fmtDia(diaSel()) : '')}</span></h2>`;
   if(!r || !r.paradas.length){
-    h += `<p class="muted" style="margin:0 0 14px;line-height:1.45">Monte a sequência de clientes que você vai visitar hoje. Eles aparecem numerados no mapa.</p>
+    h += `<p class="muted" style="margin:0 0 14px;line-height:1.45">${hoje ? 'Monte a sequência de clientes que você vai visitar hoje.' : `Planeje os clientes que vai visitar ${dia==='amanhã' ? 'amanhã' : 'em ' + dia}. A rota fica salva para o dia.`} Eles aparecem numerados no mapa.</p>
       <button class="btn primary block" data-rt="selecionar">Escolher clientes no mapa</button>
       ${nFiltro?`<button class="btn block" data-rt="filtro" style="margin-top:8px">Adicionar os ${nFiltro} do filtro atual</button>`:''}`;
   } else {
     const cs = r.paradas.map(cli);
     const pend = cs.filter(c=>!r.feitas.includes(c.id));
-    const km = custo(pend.map(c=>c.id), pontoInicio())/1000;
+    const km = custo(pend.map(c=>c.id), inicioDaRota())/1000;
     h += `<p class="muted" style="margin:0 0 10px">${r.feitas.length} de ${cs.length} visitadas${pend.length?`. Faltam cerca de ${fmtKm(km)} em linha reta`:''}.</p>
       <ol class="stops">${cs.map((c,i)=>{ const f = r.feitas.includes(c.id); const s = STATUS[c.status]||STATUS.nao;
         return `<li class="${f?'done':''}">
@@ -2226,14 +2287,21 @@ function htmlDia(){
         <button class="btn grow" data-rt="otimizar">Melhor ordem</button>
         <button class="btn grow" data-rt="selecionar">Incluir ou tirar</button>
       </div>
-      ${pend.length ? linksGoogle().map((l,j,arr)=>`<a class="btn dark block" style="margin-top:8px" href="${l.u}" target="_blank" rel="noopener">Abrir no Google Maps${arr.length>1?` (paradas ${l.de} a ${l.ate})`:''}</a>`).join('') : '<p class="ok-msg">Todas as visitas de hoje foram feitas.</p>'}
-      <button class="btn danger block" data-rt="limpar" style="margin-top:8px">Apagar rota de hoje</button>`;
+      ${pend.length ? linksGoogle().map((l,j,arr)=>`<a class="btn dark block" style="margin-top:8px" href="${l.u}" target="_blank" rel="noopener">Abrir no Google Maps${arr.length>1?` (paradas ${l.de} a ${l.ate})`:''}</a>`).join('') : `<p class="ok-msg">Todas as visitas de ${dia} foram feitas.</p>`}
+      <button class="btn danger block" data-rt="limpar" style="margin-top:8px">Apagar rota de ${dia}</button>`;
   }
   if(hist.length){
     h += `<h3>Rotas anteriores</h3><ul class="list">${hist.map(k=>{ const x = R.rotas[k];
-      return `<li><button data-rt="repetir" data-k="${k}"><span><span class="nm">${fmtDia(k)}</span><span class="sub">${x.paradas.length} paradas, ${x.feitas.length} visitadas</span></span><span class="dist">Repetir hoje</span></button></li>`; }).join('')}</ul>`;
+      return `<li><button data-rt="repetir" data-k="${k}"><span><span class="nm">${DIAS_SEM[dataDe(k).getDay()]} ${fmtDia(k)}</span><span class="sub">${x.paradas.length} paradas, ${x.feitas.length} visitadas</span></span><span class="dist">Copiar para ${dia}</span></button></li>`; }).join('')}</ul>`;
   }
   return h;
+}
+// Trocar o dia da rota: mostra a rota daquele dia no mapa e enquadra as paradas
+function escolherDia(k){
+  diaRota = k > hojeKey() ? k : null;
+  desenharRota(); abrirRotas('dia');
+  const r = rotaDoDia(false);
+  if(r && r.paradas.length) setTimeout(() => enquadrarLinha(r.paradas.map(cli).map(c => [c.lat, c.lng])), 0);
 }
 
 /* ---------- Rota de viagem ---------- */
@@ -2602,17 +2670,18 @@ $('#sheetBody').addEventListener('click', async e => {
 /* ---------- Cliques do painel de rotas ---------- */
 $('#sheetBody').addEventListener('click', async e => {
   const b = e.target.closest('[data-rt]'); if(!b) return;
-  const a = b.dataset.rt, r = rotaHoje(false);
+  const a = b.dataset.rt, r = rotaDoDia(false);
+  if(a==='dia') escolherDia(b.dataset.k);
   if(a==='aba') abrirRotas(b.dataset.v);
   if(a==='selecionar') entrarSelecao();
-  if(a==='filtro'){ const rr = rotaHoje(true); clientes.filter(passaFiltro).forEach(c=>{ if(!rr.paradas.includes(c.id)) rr.paradas.push(c.id); }); salvarR(); otimizarRota(); abrirRotas('dia'); }
+  if(a==='filtro'){ const rr = rotaDoDia(true); clientes.filter(passaFiltro).forEach(c=>{ if(!rr.paradas.includes(c.id)) rr.paradas.push(c.id); }); salvarR(); otimizarRota(); abrirRotas('dia'); }
   if(a==='feita' && r){ const id = b.dataset.id; r.feitas = r.feitas.includes(id) ? r.feitas.filter(x=>x!==id) : [...r.feitas, id]; salvarR(); desenharRota(); abrirRotas('dia'); }
   if(a==='abrir') abrirDetalhe(b.dataset.id);
   if((a==='sobe'||a==='desce') && r){ const i = +b.dataset.i, j = a==='sobe' ? i-1 : i+1; [r.paradas[i], r.paradas[j]] = [r.paradas[j], r.paradas[i]]; salvarR(); desenharRota(); abrirRotas('dia'); }
   if(a==='tirar'){ alternarNaRota(b.dataset.id); abrirRotas('dia'); }
   if(a==='otimizar'){ otimizarRota(); abrirRotas('dia'); }
-  if(a==='limpar' && await confirmar('Apagar a rota de hoje?')){ delete R.rotas[hojeKey()]; salvarR(); desenharRota(); abrirRotas('dia'); }
-  if(a==='repetir'){ const src = R.rotas[b.dataset.k]; const rr = rotaHoje(true); rr.paradas = src.paradas.filter(cli); rr.feitas = []; salvarR(); desenharRota(); abrirRotas('dia'); toast('Rota copiada para hoje'); }
+  if(a==='limpar' && await confirmar(`Apagar a rota de ${rotuloDia(diaSel())}?`)){ delete R.rotas[diaSel()]; salvarR(); desenharRota(); abrirRotas('dia'); }
+  if(a==='repetir'){ const src = R.rotas[b.dataset.k]; const rr = rotaDoDia(true); rr.paradas = src.paradas.filter(cli); rr.feitas = []; salvarR(); desenharRota(); abrirRotas('dia'); toast(`Rota copiada para ${rotuloDia(diaSel())}`); }
   if(a==='iniciar') iniciarViagem();
   if(a==='encerrar' && await confirmar('Encerrar e salvar esta viagem?')) encerrarViagem();
   if(a==='descartar' && await confirmar('Descartar esta viagem? O percurso gravado será perdido.')){ R.viagemAtiva = null; desligarRastreio(); camadaViagem.clearLayers(); salvarR(); abrirRotas('viagem'); }
