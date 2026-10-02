@@ -1096,6 +1096,7 @@ function abrirFormulario(pos, id){
     <div class="so-cliente"><label class="f">Situação</label>${segStatus(c.status==='visitado'?'':c.status)}</div>
     <label class="f">Observações
       <textarea class="inp" id="fObs" placeholder="Ex.: compra às sextas, falar com o gerente">${esc(c.obs)}</textarea></label>
+    <div class="so-cliente"><label class="f">Foto da fachada</label>${htmlCampoFoto('fFoto', id && c.fachada ? 'Trocar foto' : 'Tirar foto da fachada')}</div>
     <div class="row" style="margin-top:18px">
       <button class="btn grow" id="fCancel">Cancelar</button>
       <button class="btn primary grow" id="fSave">Salvar cliente</button>
@@ -1103,6 +1104,7 @@ function abrirFormulario(pos, id){
     ${id?'<button class="btn danger block" id="fDel" style="margin-top:12px">Excluir cliente</button>':''}
   `);
   ligarSeg(); ligarTipo(!!id);
+  const campoFoto = ligarCampoFoto('fFoto', id ? c.fachada : null);
   if(!id){ map.setView([c.lat,c.lng], Math.max(map.getZoom(),16)); setTimeout(()=>$('#fNome')?.focus(), 260); enderecoAutomatico(c.lat,c.lng); }
   $('#fCancel').onclick = () => id ? abrirDetalhe(id) : fecharPainel();
   $('#fSave').onclick = async () => {
@@ -1135,6 +1137,10 @@ function abrirFormulario(pos, id){
         abrirDetalhe(parecido.x.id); return;
       }
     }
+    // Foto da fachada: espera ficar pronta (se acabou de tirar) e guarda no aparelho
+    $('#fSave').disabled = true; await campoFoto.pronta(); $('#fSave').disabled = false;
+    const fotoNova = await guardarFoto(campoFoto.blob);
+    if(fotoNova) dados.fachada = fotoNova;
     let alvoId = id;
     if(id) Object.assign(c, dados);
     else { alvoId = uid(); clientes.push({id:alvoId, ...dados, origem:dados.tipo, lat:c.lat, lng:c.lng, criadoEm:new Date().toISOString(), visitas:[]}); }
@@ -1178,7 +1184,7 @@ function abrirDetalhe(id){
   const visitas = [...(c.visitas||[])].sort((a,b)=> b.data.localeCompare(a.data));
   const dist = fmtDist(distKm(c));
   abrirPainel(`
-    ${(() => { const f = visitas.find(v => v.foto && v.foto.id); return f ? `<div class="fachada"><img data-foto="${esc(f.foto.id)}" data-nuvem="${esc(f.foto.nuvem||'')}" alt="Fachada" hidden><span>Fachada em ${fmtData(f.data)}</span></div>` : ''; })()}
+    ${(() => { const f = fachadaAtual(c); return f ? `<div class="fachada"><img data-foto="${esc(f.id)}" data-nuvem="${esc(f.nuvem||'')}" alt="Fachada" hidden><span>Fachada em ${fmtData(f.data)}</span></div>` : ''; })()}
     <span class="status" style="--c:${s.cor}"><span class="dot"></span>${c.status==='visitado'?'Visitado (revisar)':s.label}</span>${ehP(c)?'<span class="tag">P Prospecção</span>':''}
     <h2>${esc(c.nome)}</h2>
     <div class="facts">
@@ -1368,23 +1374,62 @@ async function reduzirFoto(file, max = 1280, q = .72){
 // Visor de foto em tela cheia (toque fecha)
 function verFoto(u){ if(!u) return; $('#visorImg').src = u; $('#visor').classList.add('show'); }
 $('#visor').onclick = () => $('#visor').classList.remove('show');
+// Fachada mostrada na ficha: a mais recente entre a do cadastro (c.fachada) e as das visitas → {id, nuvem, data}
+function fachadaAtual(c){
+  const fotos = (c.visitas||[]).filter(v => v.foto && v.foto.id).map(v => ({...v.foto, data:v.data}));
+  if(c.fachada && c.fachada.id) fotos.push(c.fachada);
+  return fotos.sort((a,b) => (b.data||'').localeCompare(a.data||''))[0] || null;
+}
+// Campo "Tirar foto da fachada" (cadastro do cliente). Devolve {pronta(), blob}: pronta() espera a foto ficar pronta.
+const svgCamera = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const htmlCampoFoto = (idp, texto) => `<div class="foto-campo"><img id="${idp}Prev" alt="Foto da fachada" hidden>
+  <button type="button" class="btn block" id="${idp}Btn">${svgCamera}<span>${texto}</span></button><input type="file" id="${idp}Inp" accept="image/*" hidden></div>`;
+function ligarCampoFoto(idp, fotoAtual){
+  const st = {blob:null, promessa:null, pronta(){ return this.promessa || Promise.resolve(); }};
+  if(fotoAtual) urlDaFoto(fotoAtual).then(u => { const p = $('#' + idp + 'Prev'); if(u && p){ p.src = u; p.hidden = false; } });
+  $('#' + idp + 'Btn').onclick = () => $('#' + idp + 'Inp').click();
+  $('#' + idp + 'Inp').onchange = e => {
+    const f = e.target.files[0]; e.target.value = ''; if(!f) return;
+    const rot = $('#' + idp + 'Btn span'); if(rot) rot.textContent = 'Preparando foto…';
+    st.promessa = (async () => {
+      try{
+        st.blob = await reduzirFoto(f);
+        const p = $('#' + idp + 'Prev'); if(p){ p.src = URL.createObjectURL(st.blob); p.hidden = false; }
+        if($('#' + idp + 'Btn span')) $('#' + idp + 'Btn span').textContent = 'Trocar foto';
+      }catch(err){ if($('#' + idp + 'Btn span')) $('#' + idp + 'Btn span').textContent = 'Tirar foto da fachada'; toast('Não consegui abrir essa foto.'); }
+    })();
+  };
+  return st;
+}
+// Guarda a foto no aparelho e devolve a referência {id, data}, ou null
+async function guardarFoto(blob){
+  if(!blob) return null;
+  const id = uid();
+  try{ await FotoDB.salvar(id, blob); return {id, data:new Date().toISOString()}; }
+  catch(e){ toast('Não consegui guardar a foto neste aparelho.'); return null; }
+}
+
 // Envia para a nuvem as fotos que ainda não foram (chamado ao fim de cada sincronização)
 async function enviarFotos(){
   if(!nuvem.sb || !nuvem.usuario) return;
+  // Fotos ainda não enviadas: a da fachada no cadastro (c.fachada) e as das visitas (v.foto)
   const pend = [];
-  clientes.forEach(c => (c.visitas||[]).forEach(v => { if(v.foto && v.foto.id && !v.foto.nuvem) pend.push(v); }));
+  clientes.forEach(c => {
+    if(c.fachada && c.fachada.id && !c.fachada.nuvem) pend.push(c.fachada);
+    (c.visitas||[]).forEach(v => { if(v.foto && v.foto.id && !v.foto.nuvem) pend.push(v.foto); });
+  });
   nuvem.avisoFotos = '';
   let mudou = false;
-  for(const v of pend){
-    let blob = null; try{ blob = await FotoDB.ler(v.foto.id); }catch(e){}
+  for(const foto of pend){
+    let blob = null; try{ blob = await FotoDB.ler(foto.id); }catch(e){}
     if(!blob) continue; // foto tirada em outro aparelho que ainda não subiu
-    const caminho = `${nuvem.usuario.id}/${v.foto.id}.jpg`;
+    const caminho = `${nuvem.usuario.id}/${foto.id}.jpg`;
     const {error} = await nuvem.sb.storage.from('fotos').upload(caminho, blob, {contentType:'image/jpeg', upsert:true});
     if(error){
       nuvem.avisoFotos = /bucket|not found/i.test(error.message) ? 'Fotos aguardando: falta criar o depósito "fotos" no Supabase.' : 'Fotos aguardando envio: ' + error.message;
       break;
     }
-    v.foto.nuvem = caminho; mudou = true;
+    foto.nuvem = caminho; mudou = true;
   }
   if(mudou) salvar(); // grava o caminho; a próxima sincronização leva para a nuvem
 }
