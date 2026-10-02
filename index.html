@@ -559,6 +559,17 @@ function clarearEscuro(){
   Object.entries(ESCURO_CLARO).forEach(([id, p]) => pintar(id, p));
   // Nomes de bairros, cidades e estados (place_*)
   (glMapa.getStyle()?.layers || []).filter(l => l.id.startsWith('place_')).forEach(l => pintar(l.id, {'text-color':'#C2CDD8', 'text-halo-color':'rgba(20,28,38,.85)'}));
+  // Avenidas e rodovias muito grossas no estilo escuro (o usuário achou pesado no celular): afina
+  // multiplicando as larguras de cada degrau do "interpolate" de zoom
+  const afinar = (id, fator) => {
+    if(!glMapa.getLayer(id)) return;
+    const w = glMapa.getPaintProperty(id, 'line-width');
+    if(!Array.isArray(w) || w[0] !== 'interpolate') return;
+    // ['interpolate', tipo, ['zoom'], z1, largura1, z2, largura2, ...]: larguras nas posições 4, 6, 8...
+    glMapa.setPaintProperty(id, 'line-width', w.map((v, i) => i >= 4 && i % 2 === 0 && typeof v === 'number' ? +(v*fator).toFixed(2) : v));
+  };
+  ['highway_major_casing', 'highway_major_inner'].forEach(id => afinar(id, .6));
+  ['highway_motorway_casing', 'highway_motorway_inner'].forEach(id => afinar(id, .55));
 }
 let camadaLimpa, glMapa = null;
 try{
