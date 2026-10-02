@@ -568,8 +568,8 @@ function clarearEscuro(){
     // ['interpolate', tipo, ['zoom'], z1, largura1, z2, largura2, ...]: larguras nas posições 4, 6, 8...
     glMapa.setPaintProperty(id, 'line-width', w.map((v, i) => i >= 4 && i % 2 === 0 && typeof v === 'number' ? +(v*fator).toFixed(2) : v));
   };
-  ['highway_major_casing', 'highway_major_inner'].forEach(id => afinar(id, .6));
-  ['highway_motorway_casing', 'highway_motorway_inner'].forEach(id => afinar(id, .55));
+  ['highway_major_casing', 'highway_major_inner'].forEach(id => afinar(id, .5));
+  ['highway_motorway_casing', 'highway_motorway_inner'].forEach(id => afinar(id, .45));
 }
 let camadaLimpa, glMapa = null;
 try{
