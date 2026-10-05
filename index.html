@@ -726,10 +726,11 @@ const marcadores = new Map();
 let meuMarcador = null;
 
 // Tamanho dos marcadores conforme o zoom do Leaflet (fonte única: GL, toque e Leaflet usam isto).
-// Degraus relativos 50% / 60% / 100% (escolhidos pelo usuário), tudo × TAMANHO_BASE = 1,8
+// Degraus relativos 50% / 60% / 70% (escolhidos pelo usuário; o de perto era 100% até 05/10/2026), tudo × TAMANHO_BASE = 1,8
 // (pediu 80% maior em 02/10/2026). A gota original tem 26×35 px (cliente) e 32×43 px (lugar).
 const TAMANHO_BASE = 1.8;
-const DEGRAUS_TAMANHO = [[15, 1], [13, .6], [0, .5]]; // [a partir do zoom, tamanho relativo]
+const DEGRAUS_TAMANHO = [[15, .7], [13, .6], [0, .5]]; // [a partir do zoom, tamanho relativo]
+const TAMANHO_PERTO = TAMANHO_BASE * DEGRAUS_TAMANHO[0][1]; // tamanho no zoom de ruas, onde os nomes aparecem
 const escalaZoom = z => TAMANHO_BASE * DEGRAUS_TAMANHO.find(([zz]) => z >= zz)[1];
 function ajustarMarcadores(){
   const z = map.getZoom();
@@ -2533,10 +2534,10 @@ function lugaresDoNome(s, cab, meia, alt){
   const x = em(meia*s + 4), y = -em(cab*s);
   return ['literal', ['right', [-x, y], 'left', [x, y], 'bottom', [0, -em(alt*s + 3)], 'top', [0, em(3)]]];
 }
-// O nome só aparece com o zoom de ruas, onde a gota tem TAMANHO_BASE × fator do cliente
+// O nome só aparece com o zoom de ruas, onde a gota tem TAMANHO_PERTO × fator do cliente
 // ("match" só aceita números inteiros; por isso "case" comparando o fator)
-const nomeCliente = ['case', ...[FATOR_ROTA, FATOR_SEL, FATOR_SEL_ROTA].flatMap(f => [['==', ['get','fator'], f], lugaresDoNome(TAMANHO_BASE*f, 22, 13, 35)]), lugaresDoNome(TAMANHO_BASE, 22, 13, 35)];
-const nomeLugar = lugaresDoNome(TAMANHO_BASE, 26, 16, 43);
+const nomeCliente = ['case', ...[FATOR_ROTA, FATOR_SEL, FATOR_SEL_ROTA].flatMap(f => [['==', ['get','fator'], f], lugaresDoNome(TAMANHO_PERTO*f, 22, 13, 35)]), lugaresDoNome(TAMANHO_PERTO, 22, 13, 35)];
+const nomeLugar = lugaresDoNome(TAMANHO_PERTO, 26, 16, 43);
 function camadaSimbolos(id, tamanho, posNome){
   return {id, type:'symbol', source:id, layout:{
     'icon-image':['get','icone'], 'icon-anchor':'bottom', 'icon-size':tamanho,
