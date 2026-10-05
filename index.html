@@ -260,6 +260,8 @@ textarea.inp{height:auto;min-height:88px;padding:12px 14px;resize:vertical;line-
 
 .status{display:inline-flex;align-items:center;gap:6px;font:600 14px var(--sans);padding:5px 11px 5px 9px;border-radius:999px;background:color-mix(in srgb,var(--c) 18%,var(--surface))}
 .status .dot{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.nvis{float:right;display:inline-flex;align-items:baseline;gap:5px;font:600 13px var(--sans);color:var(--ink-2);padding:4px 11px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line)} /* contador de visitas, no canto de cima da ficha */
+.nvis b{font:700 17px var(--cond);color:var(--ink)}
 .facts{margin:12px 0 4px;display:grid;gap:8px}
 .fact{display:flex;gap:10px;align-items:flex-start;font-size:16px;line-height:1.35}
 .fact svg{flex:none;margin-top:2px;opacity:.6}
@@ -609,6 +611,9 @@ function carregar(){
 function migrar(c){
   if(c.status==='ativo') c.status = 'comprou';
   if(!c.tipo) c.tipo = 'cliente';
+  // Contador de visitas (05/10/2026): só sobe, ao encerrar uma visita; apagar do histórico não diminui.
+  // Clientes de antes do contador começam com o número de visitas que já tinham no histórico
+  if(typeof c.nVisitas !== 'number') c.nVisitas = (c.visitas || []).length;
   return c;
 }
 const ehP = c => c.tipo === 'prospect';
@@ -1198,7 +1203,7 @@ function abrirFormulario(pos, id){
     if(fotoNova) dados.fachada = fotoNova;
     let alvoId = id;
     if(id) Object.assign(c, dados);
-    else { alvoId = uid(); clientes.push({id:alvoId, ...dados, origem:dados.tipo, lat:c.lat, lng:c.lng, criadoEm:new Date().toISOString(), visitas:[]}); }
+    else { alvoId = uid(); clientes.push({id:alvoId, ...dados, origem:dados.tipo, lat:c.lat, lng:c.lng, criadoEm:new Date().toISOString(), visitas:[], nVisitas:0}); }
     salvar(); desenhar(); abrirDetalhe(alvoId);
     toast(id ? 'Alterações salvas' : 'Cliente salvo');
   };
@@ -1245,6 +1250,7 @@ function abrirDetalhe(id){
   const hPend = `<div id="pendencias">${htmlPendencias(c)}</div>`;
   abrirPainel(`
     ${emVisita ? '' : hFachada}
+    <span class="nvis" title="Visitas encerradas neste cliente"><b>${c.nVisitas || 0}</b> visita${(c.nVisitas || 0) === 1 ? '' : 's'}</span>
     <span class="status" style="--c:${s.cor}"><span class="dot"></span>${c.status==='visitado'?'Visitado (revisar)':s.label}</span>${ehP(c)?'<span class="tag">P Prospecção</span>':''}
     <h2>${esc(c.nome)}</h2>
     ${emVisita ? `${blocoVisita(c)}${hPend}${botoesVisita()}<h3>Dados do cliente</h3>${hFachada}` : ''}
@@ -1551,6 +1557,7 @@ function gravarVisitaDoCrono(){
   const visita = {data:new Date(va.inicio).toISOString(), fim:new Date(fim).toISOString(), min:minutosEntre(va.inicio, fim),
     nota:(va.notas || []).map(n => hhmm(n.t) + ' ' + n.txt).join('\n')};
   c.visitas = c.visitas || []; c.visitas.push(visita);
+  c.nVisitas = (c.nVisitas || 0) + 1; // contador: o gatilho é encerrar a visita
   if(diaLocal(va.inicio) === hojeKey()) marcarFeita(c.id);
   va = null; salvarVA(); salvar(); desenhar();
   return visita;
@@ -2065,7 +2072,7 @@ function importarKML(texto){
       telefone: tel ? tel.split(': ').slice(1).join(': ') : '',
       endereco: end ? end.split(': ').slice(1).join(': ') : '',
       obs: [pasta && 'Camada no My Maps: '+pasta, desc, ...extras.filter(x=>x!==tel && x!==end)].filter(Boolean).join('\n'),
-      status:'nao', tipo:'cliente', lat, lng, criadoEm:new Date().toISOString(), visitas:[]
+      status:'nao', tipo:'cliente', lat, lng, criadoEm:new Date().toISOString(), visitas:[], nVisitas:0
     });
     novos++;
   });
