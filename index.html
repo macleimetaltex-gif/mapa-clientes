@@ -1526,10 +1526,26 @@ function encerrarVisita(motivo, fimMs){
   const solto = $('#vaTxt') ? $('#vaTxt').value.trim() : '', pendSolta = $('#pendTxt') && visitaAbertaEm(cli(selId)) ? $('#pendTxt').value.trim() : '';
   if(solto){ va.notas = va.notas || []; va.notas.push({t:Date.now(), txt:solto}); }
   if(pendSolta){ const cp = cli(va.clienteId); if(cp) novaPendencia(cp, pendSolta); }
-  va.fim = fimMs || Date.now(); va.motivo = motivo; salvarVA();
+  va.fim = fimMs || Date.now(); va.motivo = motivo;
+  // Encerrar já registra a visita no histórico (pedido do usuário em 05/10/2026: antes ela ficava
+  // "pendente" até escolher o resultado, e os comentários pareciam ter sumido). O formulário que
+  // abre em seguida só complementa: resultado, horários, foto.
+  const id = va.clienteId, visita = gravarVisitaDoCrono(); if(!visita) return;
   try{ navigator.vibrate && navigator.vibrate(200); }catch(e){}
-  formVisita(va.clienteId);
-  toast(motivo === 'auto' ? 'Visita encerrada: você se afastou do cliente' : 'Visita encerrada');
+  formVisita(id, false, visita, motivo);
+  toast(motivo === 'auto' ? 'Visita registrada: você se afastou do cliente' : 'Visita encerrada e registrada');
+}
+// Grava no histórico do cliente a visita do cronômetro (va) e zera o cronômetro. Devolve a visita.
+function gravarVisitaDoCrono(){
+  const c = va && cli(va.clienteId);
+  if(!c){ va = null; salvarVA(); return null; }
+  const fim = va.fim || Date.now();
+  const visita = {data:new Date(va.inicio).toISOString(), fim:new Date(fim).toISOString(), min:minutosEntre(va.inicio, fim),
+    nota:(va.notas || []).map(n => hhmm(n.t) + ' ' + n.txt).join('\n')};
+  c.visitas = c.visitas || []; c.visitas.push(visita);
+  if(diaLocal(va.inicio) === hojeKey()) marcarFeita(c.id);
+  va = null; salvarVA(); salvar(); desenhar();
+  return visita;
 }
 // A cada leitura do GPS (ligarLocalizacao)
 function checarVisitaGps(lat, lng, acc, ts){
@@ -1551,11 +1567,11 @@ function atualizarFaixaVisita(){
   const c = va && cli(va.clienteId);
   if(!c){ el.classList.remove('show'); return; }
   el.classList.add('show');
-  $('#faixaVisitaTxt').textContent = va.fim ? `Visita em ${c.nome} encerrada · registrar resultado` : `Em visita: ${c.nome} · ${fmtMin(minutosEntre(va.inicio, Date.now()))}`;
+  $('#faixaVisitaTxt').textContent = `Em visita: ${c.nome} · ${fmtMin(minutosEntre(va.inicio, Date.now()))}`;
   const t = $('#vaTempo'); if(t) t.textContent = fmtMin(minutosEntre(va.inicio, Date.now()));
 }
 setInterval(atualizarFaixaVisita, 20000);
-$('#faixaVisita').onclick = () => { if(va) (va.fim ? formVisita : abrirDetalhe)(va.clienteId); };
+$('#faixaVisita').onclick = () => { if(va) abrirDetalhe(va.clienteId); };
 
 /* ================= Leitor de código de barras ================= */
 // Usa o BarcodeDetector do Chrome (Android): abre a câmera traseira em tela cheia, lê o primeiro código
@@ -1662,7 +1678,6 @@ function blocoVisita(c){
         <button class="btn dark grow" id="vaAnotar">Anotar comentário</button>
       </div>
     </div>`;
-  if(va && va.clienteId === c.id && va.fim) return `<button class="btn primary block" id="dResultado">${ok}Registrar resultado da visita</button>`;
   return `<button class="btn primary block" id="dVisita"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.500.860l10.500-6.500a1 1 0 0 0 0-1.720L9.500 4.640A1 1 0 0 0 8 5.500z"/></svg>Iniciar visita</button>
     <button class="linkbtn" id="dVisitaManual" style="display:block;margin:10px auto 2px">Já visitei · registrar sem cronômetro</button>`;
 }
@@ -1674,11 +1689,10 @@ function ligarBlocoVisita(id){
   if($('#dVisita')) $('#dVisita').onclick = async () => {
     if(va && va.clienteId !== id){
       const outro = cli(va.clienteId);
-      if(outro && !va.fim){
-        if(!await confirmar(`Você está em visita em "${outro.nome}". Encerrar aquela visita agora? Você registra o resultado dela primeiro.`, 'Encerrar aquela visita')) return;
-        encerrarVisita('botao'); return;
+      if(outro){
+        if(!await confirmar(`Você está em visita em "${outro.nome}". Encerrar aquela visita agora? Ela fica registrada no histórico.`, 'Encerrar aquela visita')) return;
+        va.fim = Date.now(); gravarVisitaDoCrono(); toast(`Visita em ${outro.nome} registrada`);
       }
-      if(outro && va.fim){ toast(`Registre antes o resultado da visita em ${outro.nome}`); formVisita(va.clienteId); return; }
     }
     iniciarVisita(id);
   };
@@ -1698,7 +1712,6 @@ function ligarBlocoVisita(id){
       va.notas.splice(+b.dataset.nota, 1); salvarVA(); $('#vaNotas').innerHTML = htmlNotasVisita();
     };
   }
-  if($('#dResultado')) $('#dResultado').onclick = () => formVisita(id);
   if($('#dCancelaVisita')) $('#dCancelaVisita').onclick = async () => {
     if(!await confirmar(`Cancelar a visita em ${c.nome}? O tempo e as anotações não serão registrados (as pendências ficam).`, 'Cancelar visita', 'Continuar visitando')) return;
     va = null; salvarVA(); abrirDetalhe(id); toast('Visita cancelada');
@@ -1707,24 +1720,27 @@ function ligarBlocoVisita(id){
 
 // Resultado da visita. Com cronômetro: início e fim já preenchidos (dá para corrigir).
 // Sem cronômetro (manual): data e, se quiser, os horários.
-function formVisita(id, manual){
+// ed: visita do cronômetro que acabou de ser gravada no histórico (encerrarVisita). O formulário só
+// complementa essa visita; o resultado é opcional e fechar sem salvar não perde nada.
+function formVisita(id, manual, ed, motivo){
   const c = clientes.find(x=>x.id===id); if(!c) return;
-  const crono = !manual && va && va.clienteId === id && va.fim ? va : null;
+  if(manual) ed = null;
   const iso = hojeKey();
   const hora = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
   let fotoNova = null;
   abrirPainel(`
-    <h2>Visita em ${esc(c.nome)}</h2>
-    ${crono ? `<p class="muted" style="margin:0 0 4px">${crono.motivo === 'auto' ? 'Encerrada sozinha quando você se afastou.' : 'Encerrada pelo botão.'} Corrija os horários se precisar.</p>` : ''}
-    <label class="f">Resultado</label>${segStatus('', RESULTADOS)}
-    ${crono ? '' : `<label class="f">Data<input class="inp" id="vData" type="date" value="${iso}" max="${iso}"></label>`}
+    <h2>${ed ? 'Visita registrada' : 'Visita em ' + esc(c.nome)}</h2>
+    ${ed ? `<p class="ok-msg" style="margin:0 0 4px">${motivo === 'auto' ? 'Encerrada sozinha quando você se afastou.' : 'Visita encerrada.'} Já está salva no histórico de ${esc(c.nome)}, com ${fmtMin(ed.min || 0)}${ed.nota ? ' e os comentários' : ''}.</p>
+    <p class="muted" style="margin:8px 0 0;line-height:1.4">Se quiser, marque o resultado, corrija os horários ou junte uma foto.</p>` : ''}
+    <label class="f">Resultado${ed ? ' (opcional)' : ''}</label>${segStatus(ed && ed.resultado || '', RESULTADOS)}
+    ${ed ? '' : `<label class="f">Data<input class="inp" id="vData" type="date" value="${iso}" max="${iso}"></label>`}
     <div class="row" style="gap:10px">
-      <label class="f grow" style="flex:1">Início<input class="inp" id="vIni" type="time" value="${crono ? hora(crono.inicio) : ''}"></label>
-      <label class="f grow" style="flex:1">Fim<input class="inp" id="vFim" type="time" value="${crono ? hora(crono.fim) : ''}"></label>
+      <label class="f grow" style="flex:1">Início<input class="inp" id="vIni" type="time" value="${ed ? hora(Date.parse(ed.data)) : ''}"></label>
+      <label class="f grow" style="flex:1">Fim<input class="inp" id="vFim" type="time" value="${ed && ed.fim ? hora(Date.parse(ed.fim)) : ''}"></label>
     </div>
     <p class="muted" id="vDur" style="margin:6px 0 0;font-size:14px"></p>
-    <label class="f">Anotação
-      <textarea class="inp" id="vNota" placeholder="Ex.: achou o preço alto, voltar quando chegar a promoção">${crono && crono.notas && crono.notas.length ? esc(crono.notas.map(n => hhmm(n.t) + ' ' + n.txt).join('\n')) : ''}</textarea></label>
+    <label class="f">${ed ? 'Comentários' : 'Anotação'}
+      <textarea class="inp" id="vNota" placeholder="Ex.: achou o preço alto, voltar quando chegar a promoção">${ed && ed.nota ? esc(ed.nota) : ''}</textarea></label>
     <label class="f">Foto da fachada</label>
     <div class="foto-campo">
       <img id="vFotoPrev" alt="Foto da fachada" hidden>
@@ -1732,10 +1748,10 @@ function formVisita(id, manual){
       <input type="file" id="vFotoInp" accept="image/*" hidden>
     </div>
     <div class="row" style="margin-top:18px">
-      <button class="btn grow" id="vCancel">Voltar</button>
-      <button class="btn primary grow" id="vSave">Salvar visita</button>
+      <button class="btn grow" id="vCancel">${ed ? 'Fechar' : 'Voltar'}</button>
+      <button class="btn primary grow" id="vSave">${ed ? 'Salvar' : 'Salvar visita'}</button>
     </div>
-    ${crono ? '<button class="linkbtn" id="vDescartar" style="display:block;margin:14px auto 0;color:var(--warn)">Descartar esta visita</button>' : ''}
+    ${ed ? '<button class="linkbtn" id="vDescartar" style="display:block;margin:14px auto 0;color:var(--warn)">Apagar esta visita</button>' : ''}
   `);
   ligarSeg();
   // Duração ao vivo a partir dos horários
@@ -1762,23 +1778,31 @@ function formVisita(id, manual){
     })();
   };
   $('#vCancel').onclick = () => abrirDetalhe(id);
-  if($('#vDescartar')) $('#vDescartar').onclick = async () => {
-    if(!await confirmar('Descartar esta visita? O tempo, as anotações e o que você preencheu não serão registrados (as pendências ficam).', 'Descartar', 'Voltar')) return;
-    va = null; salvarVA(); abrirDetalhe(id); toast('Visita descartada');
+  if($('#vDescartar')) $('#vDescartar').onclick = () => {
+    const i = c.visitas.indexOf(ed); if(i < 0){ abrirDetalhe(id); return; }
+    c.visitas.splice(i, 1); salvar(); desenhar(); abrirDetalhe(id);
+    avisoDesfazer('Visita apagada', () => {
+      const atual = cli(id); if(!atual) return;
+      atual.visitas = atual.visitas || []; atual.visitas.splice(Math.min(i, atual.visitas.length), 0, ed);
+      salvar(); desenhar(); abrirDetalhe(id);
+    });
   };
   $('#vSave').onclick = async () => {
     const res = statusEscolhido('');
-    if(!res){ toast('Escolha o resultado da visita'); return; }
+    if(!res && !ed){ toast('Escolha o resultado da visita'); return; }
     if(fotoPronta){ $('#vSave').disabled = true; await fotoPronta; $('#vSave').disabled = false; }
-    const dia = crono ? diaLocal(crono.inicio) : ($('#vData').value || iso);
+    const dia = ed ? diaLocal(Date.parse(ed.data)) : ($('#vData').value || iso);
     const noDia = hhmmTxt => new Date(`${dia}T${hhmmTxt}:00`).getTime();
     const ini = $('#vIni').value, fim = $('#vFim').value;
-    const visita = {resultado:res, nota:$('#vNota').value.trim()};
+    const visita = ed || {};
+    visita.nota = $('#vNota').value.trim();
+    if(res) visita.resultado = res;
     if(ini){
       const tIni = noDia(ini), m = minutosDosCampos();
       visita.data = new Date(tIni).toISOString();
       if(m !== null){ visita.fim = new Date(tIni + m*60000).toISOString(); visita.min = m; }
-    } else {
+      else { delete visita.fim; delete visita.min; }
+    } else if(!ed){
       // Sem horário: hoje usa a hora atual; outro dia fica ao meio-dia e marcado como "sem hora"
       visita.data = dia === iso ? new Date().toISOString() : new Date(dia + 'T12:00:00').toISOString();
       if(dia !== iso) visita.semHora = true;
@@ -1789,13 +1813,11 @@ function formVisita(id, manual){
       catch(err){ toast('Não consegui guardar a foto neste aparelho. A visita foi salva sem ela.'); }
     }
     c.visitas = c.visitas || [];
-    c.visitas.push(visita);
-    c.status = res;
-    if(dia === iso) marcarFeita(id);
-    const virou = converter(c);
-    if(crono){ va = null; salvarVA(); }
+    if(!ed){ c.visitas.push(visita); if(dia === iso) marcarFeita(id); }
+    if(res) c.status = res;
+    const virou = res ? converter(c) : false;
     salvar(); desenhar(); fecharPainel(); // pedido do usuário: salvar a visita fecha o card
-    toast(virou ? 'Comprou! Agora é cliente da carteira' : 'Visita registrada');
+    toast(virou ? 'Comprou! Agora é cliente da carteira' : (ed ? 'Visita atualizada' : 'Visita registrada'));
   };
 }
 
@@ -3529,7 +3551,12 @@ aplicarTema();
 gerarImagensGL();
 desenhar();
 // Visita que estava em andamento (ou esperando o resultado) quando o app foi fechado
-if(va){ if(!cli(va.clienteId)){ va = null; salvarVA(); } else { atualizarFaixaVisita(); if(!va.fim) ligarLocalizacao(); } }
+if(va){
+  if(!cli(va.clienteId)){ va = null; salvarVA(); }
+  // Visita que ficou "encerrada, esperando o resultado" na versão anterior: registra agora, com os comentários
+  else if(va.fim){ const nomeV = cli(va.clienteId).nome; gravarVisitaDoCrono(); setTimeout(() => toast(`Visita em ${nomeV} registrada no histórico`), 1500); }
+  else { atualizarFaixaVisita(); ligarLocalizacao(); }
+}
 lembrarBackup();
 avisarMemoria();
 // Pede ao Chrome para não apagar os dados do app quando o celular estiver com pouco espaço
