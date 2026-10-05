@@ -24,6 +24,14 @@
   var escuro = pref==='escuro' || (pref==='auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.tema = escuro ? 'escuro' : 'claro';
 })();
+/* Login obrigatório: sem sessão guardada, a tela de login já aparece no primeiro desenho da página.
+   O link de "esqueci minha senha" volta para o app com os dados no endereço (#...type=recovery). */
+var HASH_INICIAL = location.hash || '';
+(function(){
+  var tem = false;
+  try{ for(var i=0;i<localStorage.length;i++){ if(/^sb-.*-auth-token$/.test(localStorage.key(i))) tem = true; } }catch(e){}
+  if(!tem || /type=recovery|error=/.test(HASH_INICIAL)) document.documentElement.dataset.login = '1';
+})();
 </script>
 <style>
 /* ---------- Cores (tema claro) ---------- */
@@ -424,10 +432,38 @@ body.picking .aviso-dia,body.selecting .aviso-dia,body.desenhando .aviso-dia{dis
 
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 118px);transform:translate(-50%,-20px);z-index:2000;background:var(--inv-bg);color:var(--inv-fg);padding:12px 18px;border-radius:var(--r-md);font-weight:600;font-size:15px;opacity:0;transition:.2s;pointer-events:none;max-width:90%;text-align:center;box-shadow:var(--sh-2)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+/* ---------- Tela de login (cobre o app até entrar) ---------- */
+.login{position:fixed;inset:0;z-index:2500;display:none;overflow:auto;background:var(--bg);padding:calc(env(safe-area-inset-top,0px) + 24px) 16px calc(env(safe-area-inset-bottom,0px) + 24px)}
+:root[data-login] .login{display:flex}
+.login-card{margin:auto;width:100%;max-width:400px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl);padding:28px 22px 22px;box-shadow:var(--sh-1)}
+.login-logo{width:64px;height:64px;border-radius:18px;background:var(--go);display:grid;place-items:center;margin:0 auto 14px}
+.login-card h1{margin:0;text-align:center;font:700 26px var(--cond);color:var(--ink)}
+.login-card .sub{margin:6px 0 4px;text-align:center;color:var(--ink-2);font-size:15px;line-height:1.4}
+.login .senha{position:relative;display:block}
+.login .senha .inp{padding-right:54px}
+.login .senha button{position:absolute;right:2px;top:8px;width:48px;height:46px;border:0;background:none;color:var(--ink-2);display:grid;place-items:center;border-radius:var(--r-sm)}
+.login-msg{margin:12px 0 0;font:600 14px var(--sans);line-height:1.4;color:var(--warn);min-height:0}
+.login-msg.ok{color:var(--ok-fg);background:var(--ok-bg);padding:10px 12px;border-radius:var(--r-sm)}
+.login-msg:empty,.login [hidden]{display:none!important}
+.login-card .btn.primary{margin-top:18px}
+.login-link{display:block;width:100%;margin-top:8px;height:48px;border:0;background:none;color:var(--ink-2);font:600 15px var(--sans);text-decoration:underline}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
+
+<div class="login" id="login" role="dialog" aria-modal="true" aria-labelledby="loginTit">
+  <form class="login-card" id="loginForm" novalidate>
+    <div class="login-logo"><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.800 7-13a7 7 0 0 0-7-7zm0 9.600A2.600 2.600 0 1 1 12 6.400a2.600 2.600 0 0 1 0 5.200z"/></svg></div>
+    <h1 id="loginTit">Mapa de Clientes</h1>
+    <p class="sub" id="loginSub"></p>
+    <label class="f" id="loginLEmail">E-mail<input class="inp" id="nEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+    <label class="f" id="loginLSenha"><span id="loginRotSenha">Senha</span><span class="senha"><input class="inp" id="nSenha" type="password" autocomplete="current-password"><button type="button" id="verSenha" aria-label="Mostrar a senha" aria-pressed="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.600-7 10-7 10 7 10 7-3.600 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path id="verSenhaRisco" d="M4 4l16 16" style="display:none"/></svg></button></span></label>
+    <p class="login-msg" id="loginMsg" role="alert"></p>
+    <button class="btn primary block" id="loginOk" type="submit">Entrar</button>
+    <button class="login-link" id="loginLink" type="button">Esqueci minha senha</button>
+  </form>
+</div>
 
 <div id="map" aria-label="Mapa de clientes"></div>
 
@@ -1351,7 +1387,7 @@ const FotoDB = (() => {
     const db = await abrir();
     return new Promise((ok, erro) => { const t = db.transaction('fotos', modo), req = fn(t.objectStore('fotos')); t.oncomplete = () => ok(req && req.result); t.onerror = () => erro(t.error); });
   };
-  return { salvar:(id, blob) => tx('readwrite', s => s.put(blob, id)), ler:id => tx('readonly', s => s.get(id)) };
+  return { salvar:(id, blob) => tx('readwrite', s => s.put(blob, id)), ler:id => tx('readonly', s => s.get(id)), limpar:() => tx('readwrite', s => s.clear()) };
 })();
 const urlsFoto = new Map();
 async function urlDaFoto(foto){
@@ -2343,7 +2379,9 @@ async function sincronizarAgora(){
   try{
     relerDoAparelho();
     const st = lerN();
-    if(st.userId !== nuvem.usuario.id){ st.userId = nuvem.usuario.id; st.ultimo = null; st.h = {}; }
+    // Outra conta entrou neste aparelho: os dados guardados são da conta anterior e não podem subir para esta
+    if(st.userId && st.userId !== nuvem.usuario.id){ await trocarDeConta(st); return null; }
+    if(!st.userId){ st.userId = nuvem.usuario.id; st.ultimo = null; st.h = {}; }
     const h = st.h || (st.h = {}), primeira = !st.ultimo;
 
     // 1) Trazer da nuvem o que mudou (com 10 s de folga, repetir um item não faz mal)
@@ -2430,57 +2468,138 @@ function textoNuvem(){
 function htmlNuvem(){
   if(!SUPA_URL) return '';
   if(!nuvem.sb) return `<div class="nuvem"><b>Nuvem indisponível agora</b><span>O app abriu sem internet. Feche e abra de novo com sinal para sincronizar.</span></div>`;
-  if(!nuvem.usuario) return `<div class="nuvem"><b>Guardar na nuvem</b><span>Entre para seus dados ficarem salvos no Supabase e aparecerem no celular e no computador.</span><button class="btn primary block" data-n="login" style="margin-top:10px">Entrar</button></div>`;
+  if(!nuvem.usuario) return '';
   return `<div class="nuvem on"><b>Nuvem: ${esc(nuvem.usuario.email||'conectado')}</b><span id="nuvemTxt">${esc(textoNuvem())}</span>${nuvem.avisoFotos ? `<span style="color:var(--warn)">${esc(nuvem.avisoFotos)}</span>` : ''}
-    <div class="row" style="margin-top:10px"><button class="btn grow" data-n="sync">Sincronizar agora</button><button class="btn grow" data-n="sair">Sair</button></div></div>`;
+    <div class="row" style="margin-top:10px"><button class="btn grow" data-n="sync">Sincronizar agora</button><button class="btn grow" data-n="sair">Sair da conta</button></div></div>`;
 }
-function abrirLogin(){
-  abrirPainel(`<h2>Entrar na nuvem</h2>
-    <p class="muted" style="margin:0 0 4px;line-height:1.45">Use o e-mail e a senha do usuário que você criou no Supabase. Você só precisa entrar uma vez em cada aparelho.</p>
-    <label class="f">E-mail<input class="inp" id="nEmail" type="email" inputmode="email" autocomplete="username"></label>
-    <label class="f">Senha<input class="inp" id="nSenha" type="password" autocomplete="current-password"></label>
-    <div class="row" style="margin-top:16px"><button class="btn grow" data-n="voltar">Voltar</button><button class="btn primary grow" data-n="entrar">Entrar</button></div>`);
-  setTimeout(() => $('#nEmail')?.focus(), 260);
-  $('#nSenha').addEventListener('keydown', e => { if(e.key==='Enter') entrar(); });
+/* ---------- Tela de login (obrigatória desde 05/10/2026) ---------- */
+// O app só mostra o mapa com alguém conectado. Cada vendedor tem e-mail e senha (contas criadas no
+// painel do Supabase) e vê só os próprios dados. Modos da tela: entrar, esqueci (pede o link por
+// e-mail), nova (criar senha nova, depois de abrir o link) e semnuvem (a biblioteca não carregou).
+let modoLogin = 'entrar';
+const LINK_SENHA = /type=recovery/.test(HASH_INICIAL);
+const LOGIN_TXT = {
+  entrar:  {sub:'Entre com seu e-mail e sua senha.', ok:'Entrar', link:'Esqueci minha senha'},
+  esqueci: {sub:'Digite seu e-mail. Você vai receber um link para criar uma senha nova.', ok:'Enviar o link', link:'Voltar'},
+  nova:    {sub:'Crie sua senha nova.', ok:'Salvar a senha nova', link:''},
+  semnuvem:{sub:'Não consegui falar com a nuvem. Confira a internet e tente de novo.', ok:'Tentar de novo', link:''}
+};
+function msgLogin(txt, ok){ const m = $('#loginMsg'); m.textContent = txt || ''; m.classList.toggle('ok', !!ok); }
+function telaLogin(modo, msg, ok){
+  modoLogin = modo;
+  const t = LOGIN_TXT[modo];
+  document.documentElement.dataset.login = '1';
+  $('#loginSub').textContent = t.sub;
+  $('#loginLEmail').hidden = modo==='nova' || modo==='semnuvem';
+  $('#loginLSenha').hidden = modo==='esqueci' || modo==='semnuvem';
+  $('#loginRotSenha').textContent = modo==='nova' ? 'Senha nova (mínimo 6 caracteres)' : 'Senha';
+  $('#nSenha').autocomplete = modo==='nova' ? 'new-password' : 'current-password';
+  $('#nSenha').value = '';
+  const b = $('#loginOk'); b.disabled = false; b.textContent = t.ok;
+  $('#loginLink').hidden = !t.link; $('#loginLink').textContent = t.link;
+  msgLogin(msg, ok);
 }
-async function entrar(){
-  const email = $('#nEmail').value.trim(), senha = $('#nSenha').value;
-  if(!email || !senha){ toast('Preencha o e-mail e a senha.'); return; }
-  const b = document.querySelector('[data-n=entrar]'); b.disabled = true; b.textContent = 'Entrando…';
-  const {data, error} = await nuvem.sb.auth.signInWithPassword({email, password:senha});
-  if(error){
-    b.disabled = false; b.textContent = 'Entrar';
-    toast(/invalid login/i.test(error.message) ? 'E-mail ou senha incorretos.' : 'Não consegui entrar: ' + error.message);
-    return;
-  }
-  nuvem.usuario = data.user; fecharPainel(); toast('Conectado. Sincronizando…');
+function esconderLogin(){
+  delete document.documentElement.dataset.login;
+  $('#nSenha').value = ''; msgLogin('');
+  if(typeof ajustarTamanhoMapa === 'function') ajustarTamanhoMapa();
+}
+// Link de senha que já foi usado ou venceu: o Supabase devolve o erro no endereço
+let avisoLink = /error=/.test(HASH_INICIAL) ? 'Este link já foi usado ou venceu. Toque em "Esqueci minha senha" para receber outro.' : '';
+if(avisoLink) try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}
+if(document.documentElement.dataset.login) telaLogin('entrar', avisoLink);
+const mesmaConta = u =>{ const st = lerN(); return !st.userId || st.userId === u.id; };
+$('#verSenha').onclick = () => {
+  const i = $('#nSenha'), ver = i.type === 'password';
+  i.type = ver ? 'text' : 'password';
+  $('#verSenha').setAttribute('aria-pressed', ver); $('#verSenha').setAttribute('aria-label', ver ? 'Esconder a senha' : 'Mostrar a senha');
+  $('#verSenhaRisco').style.display = ver ? '' : 'none';
+};
+$('#loginLink').onclick = () => { avisoLink = ''; telaLogin(modoLogin==='entrar' ? 'esqueci' : 'entrar'); };
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if(modoLogin==='semnuvem'){ location.reload(); return; }
+  const b = $('#loginOk'), email = $('#nEmail').value.trim(), senha = $('#nSenha').value;
+  const ocupado = txt => { b.disabled = true; b.textContent = txt; msgLogin(''); };
+  const livre = (msg, ok) => { b.disabled = false; b.textContent = LOGIN_TXT[modoLogin].ok; msgLogin(msg, ok); };
+  const erroRede = er => /fetch|network/i.test(er.message||'') ? 'Sem internet. Tente de novo quando o sinal voltar.' : null;
+  try{
+    if(modoLogin==='entrar'){
+      if(!email || !senha){ msgLogin('Preencha o e-mail e a senha.'); return; }
+      ocupado('Entrando…');
+      const {data, error} = await nuvem.sb.auth.signInWithPassword({email, password:senha});
+      if(error){ livre(/invalid login/i.test(error.message) ? 'E-mail ou senha incorretos.' : erroRede(error) || 'Não consegui entrar: ' + error.message); return; }
+      await aoEntrar(data.user);
+    } else if(modoLogin==='esqueci'){
+      if(!email){ msgLogin('Digite seu e-mail.'); return; }
+      ocupado('Enviando…');
+      const {error} = await nuvem.sb.auth.resetPasswordForEmail(email, {redirectTo: location.origin + location.pathname});
+      if(error){ livre(/rate limit|security purposes/i.test(error.message) ? 'Muitos pedidos seguidos. Espere alguns minutos e tente de novo.' : erroRede(error) || 'Não consegui enviar: ' + error.message); return; }
+      telaLogin('entrar', 'Se este e-mail tiver cadastro, o link chega em alguns minutos. Olhe também a caixa de spam.', true);
+    } else if(modoLogin==='nova'){
+      if(senha.length < 6){ msgLogin('A senha precisa ter pelo menos 6 caracteres.'); return; }
+      ocupado('Salvando…');
+      const {data, error} = await nuvem.sb.auth.updateUser({password:senha});
+      if(error){ livre(/different from the old/i.test(error.message) ? 'Escolha uma senha diferente da anterior.' : erroRede(error) || 'Não consegui salvar: ' + error.message); return; }
+      try{ history.replaceState(null, '', location.pathname + location.search); }catch(er){}
+      await aoEntrar(data.user); toast('Senha nova salva');
+    }
+  }catch(er){ livre('Não deu certo: ' + (er.message || 'erro desconhecido')); }
+});
+// Depois de entrar: mostra o mapa e sincroniza. Se o aparelho tem dados de outra conta, o mapa só
+// aparece depois que a sincronização trocar os dados (trocarDeConta recarrega a página)
+async function aoEntrar(usuario){
+  nuvem.usuario = usuario; avisoLink = '';
+  if(mesmaConta(usuario)){ esconderLogin(); toast('Conectado. Sincronizando…'); }
   const r = await sincronizar();
   if(r) toast(`Nuvem sincronizada: ${r.enviados} enviado${r.enviados===1?'':'s'}, ${r.recebidos} recebido${r.recebidos===1?'':'s'}`);
-  else toast(textoNuvem());
+}
+// Outra conta entrou neste aparelho: apaga os dados da conta anterior (que já estão na nuvem dela)
+// e recarrega; ao reabrir, a sincronização traz os dados da conta nova
+async function trocarDeConta(st){
+  if(pendentes(st).length && !await confirmar('Este aparelho tem alterações de outra conta que ainda não foram para a nuvem. Se você entrar, elas serão apagadas daqui.\n\nEntrar mesmo assim?', 'Apagar e entrar', 'Cancelar')){
+    await nuvem.sb.auth.signOut(); return;
+  }
+  try{
+    [KEY, KEY_L, KEY_R, KEY_VA, KEY_BACKUP, 'mapaClientes.rotaOculta', 'mapaClientes.avisoBackup'].forEach(k => localStorage.removeItem(k));
+    gravarN({userId:nuvem.usuario.id, ultimo:null, h:{}});
+  }catch(e){}
+  try{ await FotoDB.limpar(); }catch(e){}
+  location.reload();
 }
 $('#sheetBody').addEventListener('click', async e => {
   const b = e.target.closest('[data-n]'); if(!b) return;
   const a = b.dataset.n;
-  if(a==='login') abrirLogin();
-  if(a==='voltar') $('#menuBtn').click();
-  if(a==='entrar') entrar();
   if(a==='sync'){ const r = await sincronizar(); toast(r ? `Sincronizado: ${r.enviados} enviado${r.enviados===1?'':'s'}, ${r.recebidos} recebido${r.recebidos===1?'':'s'}` : textoNuvem()); }
-  if(a==='sair' && await confirmar('Sair da nuvem? Os dados continuam neste aparelho, mas param de sincronizar.')){
-    await nuvem.sb.auth.signOut(); nuvem.usuario = null; marcarNuvem('sair'); $('#menuBtn').click(); toast('Você saiu da nuvem');
+  if(a==='sair' && await confirmar('Sair da sua conta? Para usar o app de novo, você vai precisar entrar com e-mail e senha.', 'Sair')){
+    // Última chance de mandar o que falta antes de sair
+    try{ await sincronizar(); }catch(er){}
+    fecharPainel();
+    await nuvem.sb.auth.signOut(); nuvem.usuario = null; marcarNuvem('sair'); telaLogin('entrar');
   }
 });
 if(nuvem.sb){
+  const linkSenha = LINK_SENHA;
   nuvem.sb.auth.getSession().then(({data}) => {
     nuvem.usuario = data.session ? data.session.user : null;
     marcarNuvem(nuvem.usuario ? 'ok' : 'sair');
-    if(nuvem.usuario) sincronizar();
-  }).catch(() => {});
-  nuvem.sb.auth.onAuthStateChange((ev, s) => { nuvem.usuario = s ? s.user : null; if(ev==='SIGNED_OUT') marcarNuvem('sair'); });
+    if(nuvem.usuario && linkSenha) telaLogin('nova');
+    else if(nuvem.usuario){ if(mesmaConta(nuvem.usuario)) esconderLogin(); sincronizar(); }
+    else telaLogin('entrar', avisoLink);
+  }).catch(() => telaLogin('entrar', avisoLink));
+  nuvem.sb.auth.onAuthStateChange((ev, s) => {
+    nuvem.usuario = s ? s.user : null;
+    if(ev==='PASSWORD_RECOVERY') telaLogin('nova');
+    // Saiu (aqui, em outra janela, ou a sessão venceu): volta para a tela de login
+    else if(ev==='SIGNED_OUT'){ marcarNuvem('sair'); if(document.body.classList.contains('sheet-open')) fecharPainel(); telaLogin('entrar', avisoLink); }
+    // Entrou por outra janela do app
+    else if(ev==='SIGNED_IN' && s && document.documentElement.dataset.login && !LINK_SENHA && modoLogin==='entrar' && !$('#loginOk').disabled && mesmaConta(s.user)){ esconderLogin(); setTimeout(sincronizar, 0); }
+  });
   window.addEventListener('online', () => sincronizar());
   window.addEventListener('offline', () => marcarNuvem('offline'));
   document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible') sincronizar(); });
   setInterval(() => { if(document.visibilityState==='visible') sincronizar(); }, 5*60000);
-}
+} else telaLogin('semnuvem');
 
 /* ================= Marcadores no mapa (MapLibre) ================= */
 // Com 200+ clientes, marcadores como elementos da página andavam atrasados em relação às ruas ao
@@ -3411,8 +3530,6 @@ else if(temAlgo) enquadrar([...hoteis, ...(R.casa ? [R.casa] : [])]);
 else {
   setTimeout(() => abrirPainel(`
     <h2>Seu mapa ainda está vazio</h2>
-    ${nuvem.sb && !nuvem.usuario ? `<p class="muted" style="margin:0 0 10px;line-height:1.45">Já usa o app em outro aparelho? Entre na nuvem para trazer seus dados.</p>
-    <button class="btn dark block" data-n="login" style="margin-bottom:16px">Entrar na nuvem</button>` : ''}
     <p class="muted" style="margin:0 0 16px;line-height:1.45">Traga os clientes que você já tem no My Maps ou comece cadastrando o primeiro.</p>
     <button class="btn primary block" id="eImport">Importar do My Maps</button>
     <button class="btn block" id="eNovo" style="margin-top:8px">Cadastrar primeiro cliente</button>
