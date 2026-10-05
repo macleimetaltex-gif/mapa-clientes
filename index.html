@@ -787,7 +787,7 @@ map.on('click', e => {
 
 // Gota no estilo Google Maps. Cliente: 26×35 com bolinha branca (ou "P" de prospecção).
 // Hotel e casa ("grande"): 32×43 com o ícone branco dentro. A ponta é o ponto exato do local.
-// Borda da gota: branca; laranja (e um pouco mais grossa) nos clientes da rota mostrada no mapa
+// Borda da gota: branca; laranja, na mesma espessura, nos clientes da rota mostrada no mapa
 // (pedido do usuário em 05/10/2026, para bater o olho e ver quem está na rota)
 const BORDA_ROTA = '#F97316';
 function svgGota(cor, miolo, grande, borda){
@@ -796,7 +796,7 @@ function svgGota(cor, miolo, grande, borda){
   const [w,h] = grande ? [32,43] : [26,35];
   // Sombra desenhada dentro da gota (cópia escura deslocada + mancha na ponta): mesmo efeito do
   // filter:drop-shadow, mas sem custo para o celular a cada quadro ao arrastar o mapa
-  return `<svg class="gota" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><ellipse cx="${w/2}" cy="${h-1}" rx="${grande?5:4}" ry="1.6" fill="rgba(0,0,0,.28)"/><path d="${d}" transform="translate(.9 1.3)" fill="rgba(0,0,0,.25)"/><path d="${d}" fill="${cor}" stroke="${borda || '#fff'}" stroke-width="${borda ? 2.8 : 2}"/>${miolo}</svg>`;
+  return `<svg class="gota" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><ellipse cx="${w/2}" cy="${h-1}" rx="${grande?5:4}" ry="1.6" fill="rgba(0,0,0,.28)"/><path d="${d}" transform="translate(.9 1.3)" fill="rgba(0,0,0,.25)"/><path d="${d}" fill="${cor}" stroke="${borda || '#fff'}" stroke-width="2"/>${miolo}</svg>`;
 }
 // Miolo da gota do cliente: bolinha branca, ou "P" de prospecção
 const mioloCliente = (cor, prospect) => prospect
