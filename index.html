@@ -262,6 +262,7 @@ textarea.inp{height:auto;min-height:88px;padding:12px 14px;resize:vertical;line-
 .status .dot{width:10px;height:10px;border-radius:50%;background:var(--c)}
 .nvis{float:right;display:inline-flex;align-items:baseline;gap:5px;font:600 13px var(--sans);color:var(--ink-2);padding:4px 11px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line)} /* contador de visitas, no canto de cima da ficha */
 .nvis b{font:700 17px var(--cond);color:var(--ink)}
+.nvis input{width:64px;height:30px;border:1px solid var(--go);border-radius:8px;background:var(--surface);color:var(--ink);font:700 17px var(--cond);text-align:center;padding:0 4px}
 .facts{margin:12px 0 4px;display:grid;gap:8px}
 .fact{display:flex;gap:10px;align-items:flex-start;font-size:16px;line-height:1.35}
 .fact svg{flex:none;margin-top:2px;opacity:.6}
@@ -1232,6 +1233,7 @@ async function enderecoAutomatico(lat,lng){
 }
 
 /* ================= Detalhe do cliente ================= */
+const htmlNVis = c => `<b>${c.nVisitas || 0}</b> visita${(c.nVisitas || 0) === 1 ? '' : 's'}`;
 function abrirDetalhe(id){
   const c = clientes.find(x=>x.id===id); if(!c) return;
   const antigo = selId; selId = id;
@@ -1250,7 +1252,7 @@ function abrirDetalhe(id){
   const hPend = `<div id="pendencias">${htmlPendencias(c)}</div>`;
   abrirPainel(`
     ${emVisita ? '' : hFachada}
-    <span class="nvis" title="Visitas encerradas neste cliente"><b>${c.nVisitas || 0}</b> visita${(c.nVisitas || 0) === 1 ? '' : 's'}</span>
+    <button class="nvis" id="nVis" aria-label="Número de visitas. Toque para corrigir">${htmlNVis(c)}</button>
     <span class="status" style="--c:${s.cor}"><span class="dot"></span>${c.status==='visitado'?'Visitado (revisar)':s.label}</span>${ehP(c)?'<span class="tag">P Prospecção</span>':''}
     <h2>${esc(c.nome)}</h2>
     ${emVisita ? `${blocoVisita(c)}${hPend}${botoesVisita()}<h3>Dados do cliente</h3>${hFachada}` : ''}
@@ -1289,6 +1291,22 @@ function abrirDetalhe(id){
   };
   ligarBlocoVisita(id);
   ligarPendencias(id);
+  // Contador de visitas: tocar vira campo para digitar o número (ex.: visitas feitas antes do app);
+  // Enter ou sair do campo grava, Esc desiste. Depois continua somando a cada visita encerrada
+  $('#nVis').onclick = () => {
+    const b = $('#nVis'); if(b.querySelector('input')) return;
+    b.innerHTML = `<input type="number" inputmode="numeric" min="0" max="9999" step="1" value="${c.nVisitas || 0}" aria-label="Número de visitas"> visitas`;
+    const inp = b.querySelector('input'); inp.focus(); inp.select();
+    let feito = false;
+    const fechar = gravar => {
+      if(feito) return; feito = true;
+      const n = Math.floor(Number(inp.value));
+      if(gravar && inp.value.trim() !== '' && isFinite(n) && n >= 0 && n <= 9999 && n !== (c.nVisitas || 0)){ c.nVisitas = n; salvar(); toast('Número de visitas: ' + n); }
+      b.innerHTML = htmlNVis(c);
+    };
+    inp.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); fechar(true); } if(e.key === 'Escape'){ e.stopPropagation(); fechar(false); } };
+    inp.onblur = () => fechar(true);
+  };
   // Rola o painel até o histórico (conta direta, sem scrollIntoView) e pisca a seção: se a ficha
   // inteira já cabe na tela, não há o que rolar e o destaque mostra onde o histórico está
   if($('#irHist')) $('#irHist').onclick = () => {
