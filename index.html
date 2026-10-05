@@ -787,13 +787,16 @@ map.on('click', e => {
 
 // Gota no estilo Google Maps. Cliente: 26×35 com bolinha branca (ou "P" de prospecção).
 // Hotel e casa ("grande"): 32×43 com o ícone branco dentro. A ponta é o ponto exato do local.
-function svgGota(cor, miolo, grande){
+// Borda da gota: branca; laranja (e um pouco mais grossa) nos clientes da rota mostrada no mapa
+// (pedido do usuário em 05/10/2026, para bater o olho e ver quem está na rota)
+const BORDA_ROTA = '#F97316';
+function svgGota(cor, miolo, grande, borda){
   const d = grande ? 'M16 42C16 42 2.5 26.6 2.5 16A13.5 13.5 0 0 1 29.5 16C29.5 26.6 16 42 16 42Z'
                    : 'M13 34C13 34 2 21.6 2 13A11 11 0 0 1 24 13C24 21.6 13 34 13 34Z';
   const [w,h] = grande ? [32,43] : [26,35];
   // Sombra desenhada dentro da gota (cópia escura deslocada + mancha na ponta): mesmo efeito do
   // filter:drop-shadow, mas sem custo para o celular a cada quadro ao arrastar o mapa
-  return `<svg class="gota" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><ellipse cx="${w/2}" cy="${h-1}" rx="${grande?5:4}" ry="1.6" fill="rgba(0,0,0,.28)"/><path d="${d}" transform="translate(.9 1.3)" fill="rgba(0,0,0,.25)"/><path d="${d}" fill="${cor}" stroke="#fff" stroke-width="2"/>${miolo}</svg>`;
+  return `<svg class="gota" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><ellipse cx="${w/2}" cy="${h-1}" rx="${grande?5:4}" ry="1.6" fill="rgba(0,0,0,.28)"/><path d="${d}" transform="translate(.9 1.3)" fill="rgba(0,0,0,.25)"/><path d="${d}" fill="${cor}" stroke="${borda || '#fff'}" stroke-width="${borda ? 2.8 : 2}"/>${miolo}</svg>`;
 }
 // Miolo da gota do cliente: bolinha branca, ou "P" de prospecção
 const mioloCliente = (cor, prospect) => prospect
@@ -820,7 +823,7 @@ function iconeDe(c){
   const cor = (STATUS[c.status]||STATUS.nao).cor;
   return L.divIcon({
     className:'', iconSize:[26,35], iconAnchor:[13,34],
-    html:`<div class="pin${c.id===selId?' sel':''}" style="--c:${cor};--f:${fatorCliente(c)}">${svgGota(cor, mioloCliente(cor, ehP(c)))}<span class="lbl">${esc(c.nome)}</span></div>`
+    html:`<div class="pin${c.id===selId?' sel':''}" style="--c:${cor};--f:${fatorCliente(c)}">${svgGota(cor, mioloCliente(cor, ehP(c)), false, idsNaRota().has(c.id) ? BORDA_ROTA : null)}<span class="lbl">${esc(c.nome)}</span></div>`
   });
 }
 // Toque num cliente (vale para o marcador do Leaflet e para o desenhado dentro do mapa)
@@ -2612,6 +2615,8 @@ async function gerarImagensGL(){
   Object.entries(STATUS).forEach(([k,s]) => {
     lista.push(['c-'+k, svgGota(s.cor, mioloCliente(s.cor, false)), 26, 35]);
     lista.push(['p-'+k, svgGota(s.cor, mioloCliente(s.cor, true)), 26, 35]);
+    lista.push(['c-'+k+'-r', svgGota(s.cor, mioloCliente(s.cor, false), false, BORDA_ROTA), 26, 35]);
+    lista.push(['p-'+k+'-r', svgGota(s.cor, mioloCliente(s.cor, true), false, BORDA_ROTA), 26, 35]);
   });
   Object.keys(LUGAR).forEach(t => lista.push(['l-'+t, svgGota(LUGAR[t].cor, mioloLugar(t), true), 32, 43]));
   const imgs = {};
@@ -2638,7 +2643,7 @@ const tamanhoComSelecao = tamanhoGL(true);
 const geoClientes = () => { const naRota = idsNaRota(); return {type:'FeatureCollection', features: clientes.filter(passaFiltro).map(c => ({
   type:'Feature', geometry:{type:'Point', coordinates:[c.lng, c.lat]},
   // ordem: quem está mais ao sul fica na frente; os da rota na frente dos outros; o selecionado na frente de todos
-  properties:{id:c.id, nome:c.nome, icone:(ehP(c)?'p-':'c-') + (STATUS[c.status] ? c.status : 'nao'), fator:fatorCliente(c, naRota),
+  properties:{id:c.id, nome:c.nome, icone:(ehP(c)?'p-':'c-') + (STATUS[c.status] ? c.status : 'nao') + (naRota.has(c.id) ? '-r' : ''), fator:fatorCliente(c, naRota),
     ordem:c.id===selId ? 1e6 : (naRota.has(c.id) ? 5e5 : 0) - c.lat*1000}
 }))}; };
 const geoLugares = () => ({type:'FeatureCollection', features: [
