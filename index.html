@@ -141,6 +141,8 @@ input[type=date]{color-scheme:inherit}
 .pin svg.gota{display:block;overflow:visible}
 .dot.p{position:relative}
 .dot.p::after{content:"P";position:absolute;inset:0;display:grid;place-items:center;font:700 9px/1 var(--sans);color:#fff}
+/* Região: bolinha vazada, com a cor na borda (como a borda da gota) */
+.dot.reg{width:12px;height:12px;border-radius:50%;background:transparent!important;border:3px solid var(--c)!important;box-shadow:none!important;box-sizing:border-box;flex:none;display:inline-block}
 .list .dot.p{width:20px;height:20px}
 .list .dot.p::after{font-size:11px}
 .chip .dot.p{width:16px;height:16px}
@@ -616,6 +618,25 @@ function montarStatus(sit){
 }
 // R (rotas, casa e agora as situações) é lido mais abaixo no arquivo; aqui lê só as situações
 montarStatus((() => { try{ return JSON.parse(localStorage.getItem('mapaClientes.rotas.v1')).situacoes; }catch(e){ return null; } })());
+
+// Regiões (05/10/2026, pedido do usuário para separar os clientes e montar as rotas por região): cada
+// uma tem nome e cor, e a cor vira a BORDA da gota (a situação continua sendo o miolo). Ficam em
+// R.regioes = [{id,label,cor}] (nuvem: item "config") e cada cliente guarda c.regiao = id.
+// Na rota mostrada no mapa a borda laranja da rota vale mais que a da região.
+const MAX_REGIOES = 12;
+const PALETA_REG = ['#DC2626','#7C3AED','#C026D3','#EC4899','#0D9488','#65A30D','#4F46E5','#0EA5E9','#92400E','#FACC15'];
+let cacheReg = null;
+function regioes(){
+  if(cacheReg) return cacheReg;
+  let bruto = []; try{ bruto = R.regioes; }catch(e){ return []; } // R ainda não carregado
+  const ids = new Set();
+  return cacheReg = (Array.isArray(bruto) ? bruto : []).slice(0, MAX_REGIOES).filter(x => {
+    if(!x || !/^[a-z0-9_]{2,24}$/.test(x.id || '') || ids.has(x.id) || !nomeSit(x.label)) return false;
+    ids.add(x.id); return true;
+  }).map(x => ({id:x.id, label:nomeSit(x.label), cor:corSit(x.cor) || PALETA_REG[1]}));
+}
+const regiaoDe = c => (c && c.regiao && regioes().find(r => r.id === c.regiao)) || null;
+const FILTRO_REG = /^reg_([a-z0-9_]{2,24})$/;
 const RESULTADOS = ['comprou','nao_comprou','retornar','sem']; // opções ao registrar visita
 const TIPOS = {prospect:'Prospecção', cliente:'Cliente da carteira'};
 const DIAS_ATRASO = 30;
@@ -624,7 +645,8 @@ let clientes = carregar();
 // Filtro do topo: o app abre com o último usado (gravado em desenharChips)
 const KEY_FILTRO = 'mapaClientes.filtro';
 let filtro = (() => {
-  try{ const f = localStorage.getItem(KEY_FILTRO); return ['todos','lugares','prospect','atraso', ...Object.keys(STATUS)].includes(f) ? f : 'todos'; }
+  // filtro de região ("reg_<id>"): aceito aqui e conferido em desenharChips, quando as regiões já foram lidas
+  try{ const f = localStorage.getItem(KEY_FILTRO); return ['todos','lugares','prospect','atraso', ...Object.keys(STATUS)].includes(f) || FILTRO_REG.test(f || '') ? f : 'todos'; }
   catch(e){ return 'todos'; }
 })();
 let busca = '';
@@ -692,6 +714,7 @@ function passaFiltro(c){
   if(filtro === 'lugares') return false; // só hotéis e casa no mapa
   if(filtro === 'atraso') return atrasado(c);
   if(filtro === 'prospect') return ehP(c);
+  const fr = FILTRO_REG.exec(filtro); if(fr) return !!regiaoDe(c) && c.regiao === fr[1];
   return c.status === filtro;
 }
 
@@ -862,7 +885,7 @@ function iconeDe(c){
   const cor = (STATUS[c.status]||STATUS.nao).cor;
   return L.divIcon({
     className:'', iconSize:[26,35], iconAnchor:[13,34],
-    html:`<div class="pin${c.id===selId?' sel':''}" style="--c:${cor};--f:${fatorCliente(c)}">${svgGota(cor, mioloCliente(cor, ehP(c)), false, idsNaRota().has(c.id) ? BORDA_ROTA : null)}<span class="lbl">${esc(c.nome)}</span></div>`
+    html:`<div class="pin${c.id===selId?' sel':''}" style="--c:${cor};--f:${fatorCliente(c)}">${svgGota(cor, mioloCliente(cor, ehP(c)), false, idsNaRota().has(c.id) ? BORDA_ROTA : (regiaoDe(c) || {}).cor || null)}<span class="lbl">${esc(c.nome)}</span></div>`
   });
 }
 // Toque num cliente (vale para o marcador do Leaflet e para o desenhado dentro do mapa)
@@ -887,12 +910,17 @@ function desenhar(){
 
 /* ================= Filtros ================= */
 function desenharChips(){
+  const regs = regioes();
+  // Região do filtro foi apagada (aqui ou em outro aparelho): volta para Todos
+  const fr = FILTRO_REG.exec(filtro); if(fr && !regs.some(r => r.id === fr[1])) filtro = 'todos';
   try{ localStorage.setItem(KEY_FILTRO, filtro); }catch(e){}
   const cont = {todos:clientes.length, atraso:clientes.filter(atrasado).length, prospect:clientes.filter(ehP).length};
   Object.keys(STATUS).forEach(k => cont[k] = clientes.filter(c=>c.status===k).length);
-  const itens = [['todos','Todos',null], ['prospect','Prospecção','var(--tipo)'], ...Object.entries(STATUS).map(([k,s])=>[k,s.label,s.cor]), ['atraso',`${DIAS_ATRASO}+ dias sem visita`,'var(--tipo)']];
-  $('#chips').innerHTML = itens.map(([k,l,cor]) =>
-    `<button class="chip" data-f="${k}" aria-pressed="${filtro===k}" ${cor?`style="--c:${cor}"`:''}>${cor?`<span class="dot${k==='prospect'?' p':''}"></span>`:''}${l} <span class="n">${cont[k]}</span></button>`
+  regs.forEach(r => cont['reg_'+r.id] = clientes.filter(c => c.regiao === r.id).length);
+  // As regiões vêm logo depois de Prospecção (bolinha vazada, com a cor na borda, como a gota)
+  const itens = [['todos','Todos',null], ['prospect','Prospecção','var(--tipo)'], ...regs.map(r => ['reg_'+r.id, r.label, r.cor, 'reg']), ...Object.entries(STATUS).map(([k,s])=>[k,s.label,s.cor]), ['atraso',`${DIAS_ATRASO}+ dias sem visita`,'var(--tipo)']];
+  $('#chips').innerHTML = itens.map(([k,l,cor,tipo]) =>
+    `<button class="chip" data-f="${k}" aria-pressed="${filtro===k}" ${cor?`style="--c:${cor}"`:''}>${cor?`<span class="dot${k==='prospect'?' p':''}${tipo==='reg'?' reg':''}"></span>`:''}${l} <span class="n">${cont[k]}</span></button>`
   ).join('');
   // Lugares (hotéis e casa): filtro que esconde os clientes e mostra só eles
   const nLugares = hoteis.length + (R.casa ? 1 : 0);
@@ -1184,6 +1212,9 @@ function abrirFormulario(pos, id){
     <label class="f tipo-rot">Tipo</label>${segTipo(c.tipo||'cliente')}
     ${id ? `<p class="muted" id="fAvisoLugar" hidden style="font-size:14px;line-height:1.45;margin:10px 0 0">Ele sai da lista de clientes e passa a aparecer em Lugares, com o ícone próprio.${(c.visitas||[]).length ? ` O histórico de ${(c.visitas||[]).length} visita${(c.visitas||[]).length===1?'':'s'} será apagado.` : ''}</p>` : ''}
     <div class="so-cliente"><label class="f">Situação</label>${segStatus(c.status==='visitado'?'':c.status)}</div>
+    <div class="so-cliente"><label class="f">Região</label>${regioes().length
+      ? `<div class="seg" id="segReg"><button type="button" data-r="" aria-pressed="${!regiaoDe(c)}" style="--c:var(--ink-2)">Sem região</button>${regioes().map(r => `<button type="button" data-r="${r.id}" style="--c:${r.cor}" aria-pressed="${c.regiao===r.id}"><span class="dot reg"></span>${r.label}</button>`).join('')}</div>`
+      : '<p class="muted" style="margin:6px 0 0;font-size:14px;line-height:1.4">Nenhuma região criada ainda. Crie em Menu &gt; Regiões.</p>'}</div>
     <label class="f">Observações
       <textarea class="inp" id="fObs" placeholder="Ex.: compra às sextas, falar com o gerente">${esc(c.obs)}</textarea></label>
     <div class="so-cliente"><label class="f">Foto da fachada</label>${htmlCampoFoto('fFoto', id && c.fachada ? 'Trocar foto' : 'Tirar foto da fachada')}</div>
@@ -1194,6 +1225,7 @@ function abrirFormulario(pos, id){
     ${id?'<button class="btn danger block" id="fDel" style="margin-top:12px">Excluir cliente</button>':''}
   `);
   ligarSeg(); ligarTipo(!!id);
+  if($('#segReg')) $('#segReg').onclick = e => { const b = e.target.closest('button'); if(!b) return; $('#segReg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
   const campoFoto = ligarCampoFoto('fFoto', id ? c.fachada : null);
   if(!id){ map.setView([c.lat,c.lng], Math.max(map.getZoom(),16)); setTimeout(()=>$('#fNome')?.focus(), 260); enderecoAutomatico(c.lat,c.lng); }
   $('#fCancel').onclick = () => id ? abrirDetalhe(id) : fecharPainel();
@@ -1228,6 +1260,8 @@ function abrirFormulario(pos, id){
       return;
     }
     const dados ={nome, responsavel:$('#fResp').value.trim(), telefone:$('#fTel').value.trim(), endereco:$('#fEnd').value.trim(), obs:$('#fObs').value.trim(), status:statusEscolhido(c.status||'nao'), tipo:tipoEscolhido()};
+    // Região: só mexe se o seletor apareceu (sem regiões criadas, o cliente fica como estava)
+    if($('#segReg')) dados.regiao = ($('#segReg [aria-pressed="true"]') || {dataset:{}}).dataset.r || null;
     // Cliente repetido: nome igual ou parecido a menos de 300 m
     if(!id){
       const n = normal(nome);
@@ -1294,7 +1328,7 @@ function abrirDetalhe(id){
   abrirPainel(`
     ${emVisita ? '' : hFachada}
     <button class="nvis" id="nVis" aria-label="Número de visitas. Toque para corrigir">${htmlNVis(c)}</button>
-    <span class="status" style="--c:${s.cor}"><span class="dot"></span>${c.status==='visitado'?'Visitado (revisar)':s.label}</span>${ehP(c)?'<span class="tag">P Prospecção</span>':''}
+    <span class="status" style="--c:${s.cor}"><span class="dot"></span>${c.status==='visitado'?'Visitado (revisar)':s.label}</span>${ehP(c)?'<span class="tag">P Prospecção</span>':''}${(() => { const rg = regiaoDe(c); return rg ? `<span class="tag" style="--c:${rg.cor}"><span class="dot reg"></span>${rg.label}</span>` : ''; })()}
     <h2>${esc(c.nome)}</h2>
     ${emVisita ? `${blocoVisita(c)}${hPend}${botoesVisita()}<h3>Dados do cliente</h3>${hFachada}` : ''}
     <div class="facts">
@@ -1934,7 +1968,7 @@ function abrirLista(){
     const da = a.d===null ? Infinity : a.d, db = b.d===null ? Infinity : b.d;
     return db - da;
   });
-  const titulo = filtro==='todos' ? 'Clientes' : filtro==='atraso' ? `${DIAS_ATRASO}+ dias sem visita` : filtro==='prospect' ? 'Prospecção' : STATUS[filtro].label;
+  const titulo = filtro==='todos' ? 'Clientes' : filtro==='atraso' ? `${DIAS_ATRASO}+ dias sem visita` : filtro==='prospect' ? 'Prospecção' : FILTRO_REG.test(filtro) ? 'Região ' + ((regioes().find(r => 'reg_'+r.id === filtro) || {}).label || '') : (STATUS[filtro] || STATUS.nao).label;
   abrirPainel(`
     <h2>${titulo} <span class="muted" style="font-weight:600">(${lista.length})</span></h2>
     <p class="muted" style="margin:0 0 8px;font-size:14px">${minhaPos?'Ordenados pelos mais próximos de você.':'Ordenados por quem está há mais tempo sem visita. Toque em ◎ para ordenar por distância.'}</p>
@@ -2014,6 +2048,58 @@ function formSituacao(k){
   };
 }
 
+/* ================= Regiões (Menu > Visitas > Regiões) ================= */
+function gravarRegioes(){ cacheReg = null; salvarR(); desenhar(); }
+function abrirRegioes(){
+  const regs = regioes(), semRegiao = clientes.filter(c => !regiaoDe(c)).length;
+  abrirPainel(`
+    <h2>Regiões</h2>
+    <p class="muted" style="margin:0 0 10px;line-height:1.45">A região é a cor da <b>borda</b> da gota no mapa. Depois de criar, escolha a região de cada cliente em "Editar dados". Cada região vira um filtro no topo do mapa.</p>
+    ${regs.length ? `<ul class="list">${regs.map(r => { const n = clientes.filter(c => c.regiao === r.id).length;
+      return `<li><button data-reg="${r.id}"><span class="dot reg" style="--c:${r.cor};width:18px;height:18px"></span><span><span class="nm">${r.label}</span><span class="sub">${n} cliente${n===1?'':'s'}</span></span><span class="dist">Editar</span></button></li>`; }).join('')}</ul>
+      <p class="muted" style="font-size:14px;margin:10px 0 0">${semRegiao} cliente${semRegiao===1?'':'s'} sem região.</p>`
+      : '<div class="empty">Nenhuma região criada ainda.</div>'}
+    ${regs.length < MAX_REGIOES ? '<button class="btn primary block" id="regNova" style="margin-top:14px">+ Nova região</button>' : `<p class="muted" style="margin:14px 0 0">Limite de ${MAX_REGIOES} regiões. Apague uma para criar outra.</p>`}
+    <button class="btn block" id="regVoltar" style="margin-top:8px">Voltar</button>`);
+  document.querySelectorAll('[data-reg]').forEach(b => b.onclick = () => formRegiao(b.dataset.reg));
+  if($('#regNova')) $('#regNova').onclick = () => formRegiao(null);
+  $('#regVoltar').onclick = () => $('#menuBtn').click();
+}
+// id = região a editar, ou null para criar
+function formRegiao(id){
+  const r = id ? regioes().find(x => x.id === id) : null; if(id && !r) return;
+  const usadas = regioes().filter(x => x.id !== id).map(x => x.cor.toUpperCase());
+  let cor = r ? r.cor : (PALETA_REG.find(c => !usadas.includes(c.toUpperCase())) || PALETA_REG[0]);
+  const paleta = [...new Set([...(r ? [r.cor] : []), ...PALETA_REG].map(c => c.toUpperCase()))];
+  const n = id ? clientes.filter(c => c.regiao === id).length : 0;
+  abrirPainel(`
+    <h2>${id ? 'Editar região' : 'Nova região'}</h2>
+    <label class="f">Nome<input class="inp" id="regNome" maxlength="24" value="${r ? r.label : ''}" autocomplete="off" placeholder="Ex.: Centro, Zona Norte, Canaã"></label>
+    <label class="f">Cor da borda</label>
+    <div class="paleta" id="regPaleta">${paleta.map(c => `<button type="button" data-c="${c}" style="--c:${c}" aria-pressed="${c === cor.toUpperCase()}" aria-label="Cor ${c}${usadas.includes(c) ? ' (já usada em outra região)' : ''}">${usadas.includes(c) ? '<i></i>' : ''}</button>`).join('')}</div>
+    <p class="muted" style="font-size:13px;margin:8px 0 0">O pontinho marca as cores já usadas em outra região.</p>
+    <div class="row" style="margin-top:18px"><button class="btn grow" id="regCancel">Cancelar</button><button class="btn primary grow" id="regSalvar">Salvar</button></div>
+    ${id ? '<button class="btn danger block" id="regApagar" style="margin-top:12px">Apagar região</button>' : ''}`);
+  if(!id) setTimeout(() => $('#regNome')?.focus(), 260);
+  $('#regPaleta').onclick = e => { const b = e.target.closest('button'); if(!b) return; cor = b.dataset.c; $('#regPaleta').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
+  $('#regCancel').onclick = abrirRegioes;
+  $('#regSalvar').onclick = () => {
+    const nome = nomeSit($('#regNome').value);
+    if(!nome){ $('#regNome').focus(); toast('Dê um nome para a região.'); return; }
+    if(regioes().some(x => x.id !== id && normal(x.label) === normal(nome))){ toast('Já existe uma região com esse nome.'); return; }
+    if(!Array.isArray(R.regioes)) R.regioes = [];
+    if(!id) R.regioes.push({id:'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), label:nome, cor});
+    else { const e = R.regioes.find(x => x && x.id === id); if(e){ e.label = nome; e.cor = cor; } }
+    gravarRegioes(); abrirRegioes(); toast(id ? 'Região alterada' : `Região "${nome}" criada`);
+  };
+  if($('#regApagar')) $('#regApagar').onclick = async () => {
+    if(!await confirmar(`Apagar a região "${r.label}"?${n ? `\n\n${n} cliente${n===1?' fica':'s ficam'} sem região. Os clientes não são apagados.` : ''}`, 'Apagar')) return;
+    if(n){ clientes.forEach(c => { if(c.regiao === id) c.regiao = null; }); salvar(); }
+    R.regioes = R.regioes.filter(x => x && x.id !== id);
+    gravarRegioes(); abrirRegioes(); toast('Região apagada');
+  };
+}
+
 /* ================= Menu ================= */
 $('#menuBtn').onclick = () => {
   const mes = new Date(); mes.setDate(1); mes.setHours(0,0,0,0);
@@ -2030,6 +2116,7 @@ $('#menuBtn').onclick = () => {
     <h3>Visitas</h3>
     <button class="menuitem" id="mRelatorio"><span class="ic">${ICO.relatorio}</span><span>Relatório de visitas<small>Visitas do dia com horário, duração, anotações e fotos</small></span></button>
     <button class="menuitem" id="mSituacoes"><span class="ic"><span class="sit-ic">${Object.values(STATUS).slice(0,4).map(s => `<i style="background:${s.cor}"></i>`).join('')}</span></span><span>Situações<small>Criar situações novas e mudar o nome e a cor das atuais</small></span></button>
+    <button class="menuitem" id="mRegioes"><span class="ic"><span class="dot reg" style="--c:${(regioes()[0] || {}).cor || 'var(--ink-2)'};width:20px;height:20px"></span></span><span>Regiões<small>${regioes().length ? `${regioes().length} criada${regioes().length===1?'':'s'}: a cor da borda da gota` : 'Separar os clientes por região, com a cor na borda da gota'}</small></span></button>
     <h3>Aparência</h3>
     <div class="tema" role="group" aria-label="Tema">
       ${[['auto','Automático'],['claro','Claro'],['escuro','Escuro']].map(([k,l]) => `<button data-tema="${k}" aria-pressed="${prefTema()===k}">${l}</button>`).join('')}
@@ -2049,6 +2136,7 @@ $('#menuBtn').onclick = () => {
   });
   $('#mRelatorio').onclick = () => abrirRelatorio();
   $('#mSituacoes').onclick = () => abrirSituacoes();
+  $('#mRegioes').onclick = () => abrirRegioes();
   $('#mImport').onclick = () => $('#fileKml').click();
   $('#mExportKml').onclick = exportarKML;
   $('#mBackup').onclick = exportarBackup;
@@ -2264,7 +2352,7 @@ $('#fileJson').addEventListener('change', async e => {
       ['viagens','salvas'].forEach(n => { if(Array.isArray(j.rotas[n])) j.rotas[n] = j.rotas[n].filter(Boolean).map(limparId); });
     }
     if(Array.isArray(j.hoteis)) j.hoteis = j.hoteis.filter(Boolean).map(limparId);
-    if(j.rotas && typeof j.rotas==='object'){ R = Object.assign(baseR(), j.rotas, {viagemAtiva:R.viagemAtiva}); salvarR(); aplicarSituacoes(); }
+    if(j.rotas && typeof j.rotas==='object'){ R = Object.assign(baseR(), j.rotas, {viagemAtiva:R.viagemAtiva}); salvarR(); cacheReg = null; aplicarSituacoes(); }
     if(Array.isArray(j.hoteis)){ hoteis = j.hoteis.filter(h => h && isFinite(h.lat) && isFinite(h.lng) && h.nome); salvarL(); }
     salvar(); filtro='todos'; desenhar(); fecharPainel(); enquadrar(clientes);
     toast(`${clientes.length} clientes restaurados`);
@@ -2495,7 +2583,7 @@ function itensLocais(){
   const m = new Map();
   clientes.forEach(c => m.set('cliente|'+c.id, c));
   hoteis.forEach(h => m.set('hotel|'+h.id, h));
-  m.set('config|config', {casa:R.casa || null, destinoPadrao:R.destinoPadrao, ...(R.situacoes ? {situacoes:R.situacoes} : {})});
+  m.set('config|config', {casa:R.casa || null, destinoPadrao:R.destinoPadrao, ...(R.situacoes ? {situacoes:R.situacoes} : {}), ...(R.regioes ? {regioes:R.regioes} : {})});
   Object.entries(R.rotas).forEach(([k,r]) => m.set('rota_dia|'+k, r));
   R.salvas.forEach(s => m.set('rota_salva|'+s.id, s));
   R.viagens.forEach(v => m.set('viagem|'+v.id, v));
@@ -2516,6 +2604,7 @@ function aplicarRemoto(tipo, id, dados, apagado){
     R.casa = dados.casa || null; if(dados.destinoPadrao) R.destinoPadrao = dados.destinoPadrao;
     // Config enviada por uma versão antiga do app não tem as situações: nesse caso ficam as do aparelho
     if('situacoes' in dados){ R.situacoes = dados.situacoes; aplicarSituacoes(); }
+    if('regioes' in dados){ R.regioes = dados.regioes; cacheReg = null; }
   }
 }
 // O que mudou no aparelho e ainda não foi para a nuvem
@@ -2544,7 +2633,7 @@ function relerDoAparelho(){
       const gravando = (typeof watchId !== 'undefined' && watchId !== null) ? R.viagemAtiva : null;
       R = Object.assign(baseR(), JSON.parse(r));
       if(gravando) R.viagemAtiva = gravando;
-      aplicarSituacoes();
+      cacheReg = null; aplicarSituacoes();
       mudou = true;
     }
   }catch(e){}
@@ -2814,18 +2903,48 @@ async function gerarImagensGL(){
   });
   Object.keys(LUGAR).forEach(t => lista.push(['l-'+t, svgGota(LUGAR[t].cor, mioloLugar(t), true), 32, 43]));
   const imgs = {};
-  await Promise.all(lista.map(([nome, svg, w, h]) => new Promise(ok => {
+  await Promise.all(lista.map(async ([nome, svg, w, h]) => { const d = await desenharGota(svg, w, h); if(d) imgs[nome] = d; }));
+  GL.imagens = imgs;
+  montarGL();
+}
+// SVG da gota → imagem para o MapLibre
+function desenharGota(svg, w, h){
+  return new Promise(ok => {
     const im = new Image();
     im.onload = () => {
       const cv = document.createElement('canvas'); cv.width = w*DPR_GL; cv.height = h*DPR_GL;
       const cx = cv.getContext('2d'); cx.drawImage(im, 0, 0, cv.width, cv.height);
-      imgs[nome] = cx.getImageData(0, 0, cv.width, cv.height); ok();
+      ok(cx.getImageData(0, 0, cv.width, cv.height));
     };
-    im.onerror = () => ok();
+    im.onerror = () => ok(null);
     im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '));
-  })));
-  GL.imagens = imgs;
-  montarGL();
+  });
+}
+// Imagem da gota de um cliente: "c-" ou "p-" + situação, mais "-r" (na rota, borda laranja) ou
+// "-b<cor>" (borda da região). As de região são muitas combinações (situação × tipo × região), então
+// só são feitas as que aparecem, na hora: enquanto não fica pronta, vale a gota de borda branca
+const filaGotas = new Set();
+function imagemDoCliente(c, naRota){
+  const k = STATUS[c.status] ? c.status : 'nao', base = (ehP(c) ? 'p-' : 'c-') + k;
+  if(naRota.has(c.id)) return base + '-r';
+  const rg = regiaoDe(c); if(!rg) return base;
+  const nome = base + '-b' + rg.cor.slice(1).toLowerCase();
+  if(GL.imagens && GL.imagens[nome]) return nome;
+  if(GL.imagens && !filaGotas.has(nome)){ filaGotas.add(nome); clearTimeout(imagemDoCliente.t); imagemDoCliente.t = setTimeout(fazerGotasDaFila, 0); }
+  return base;
+}
+async function fazerGotasDaFila(){
+  const nomes = [...filaGotas], feitas = GL.imagens;
+  await Promise.all(nomes.map(async nome => {
+    const m = /^([cp])-(.+)-b([0-9a-f]{6})$/.exec(nome), s = m && STATUS[m[2]]; if(!s) return;
+    const d = await desenharGota(svgGota(s.cor, mioloCliente(s.cor, m[1] === 'p'), false, '#' + m[3]), 26, 35); if(!d) return;
+    if(feitas !== GL.imagens) return; // as imagens foram refeitas no meio do caminho (cor de situação mudou)
+    GL.imagens[nome] = d;
+    if(GL.estiloPronto){ if(glMapa.hasImage(nome)) glMapa.updateImage(nome, d); else glMapa.addImage(nome, d, {pixelRatio:DPR_GL}); }
+  }));
+  // Quem falhou continua na fila, para não ficar tentando sem parar
+  nomes.forEach(n => { if(feitas !== GL.imagens || GL.imagens[n]) filaGotas.delete(n); });
+  atualizarGL();
 }
 // Mesmo tamanho dos marcadores do Leaflet (ajustarMarcadores). O zoom do MapLibre é o do Leaflet − 1.
 // (o MapLibre exige o "step" do zoom por fora; o aumento de 30% do selecionado vai dentro de cada degrau)
@@ -2837,7 +2956,7 @@ const tamanhoComSelecao = tamanhoGL(true);
 const geoClientes = () => { const naRota = idsNaRota(); return {type:'FeatureCollection', features: clientes.filter(passaFiltro).map(c => ({
   type:'Feature', geometry:{type:'Point', coordinates:[c.lng, c.lat]},
   // ordem: quem está mais ao sul fica na frente; os da rota na frente dos outros; o selecionado na frente de todos
-  properties:{id:c.id, nome:c.nome, icone:(ehP(c)?'p-':'c-') + (STATUS[c.status] ? c.status : 'nao') + (naRota.has(c.id) ? '-r' : ''), fator:fatorCliente(c, naRota),
+  properties:{id:c.id, nome:c.nome, icone:imagemDoCliente(c, naRota), fator:fatorCliente(c, naRota),
     ordem:c.id===selId ? 1e6 : (naRota.has(c.id) ? 5e5 : 0) - c.lat*1000}
 }))}; };
 const geoLugares = () => ({type:'FeatureCollection', features: [
