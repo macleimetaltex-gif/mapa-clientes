@@ -696,6 +696,12 @@ function diasDesde(iso){
   const h = new Date(); h.setHours(0,0,0,0);
   return Math.round((h - d)/86400000);
 }
+// "Nunca visitado" segue o contador de visitas (pedido do usuário em 05/10/2026): com o histórico vazio
+// mas o contador acima de zero (visitas apagadas ou número digitado), mostra as visitas contadas
+function textoVisitado(c, d){
+  const n = c.nVisitas || 0;
+  return d === null && n > 0 ? `${n} visita${n === 1 ? '' : 's'} registrada${n === 1 ? '' : 's'}` : textoDias(d);
+}
 function textoDias(n){
   if(n === null) return 'Nunca visitado';
   if(n === 0) return 'Visitado hoje';
@@ -1364,7 +1370,7 @@ function abrirDetalhe(id){
       ${c.endereco?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-7.2 7-12a7 7 0 0 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg><span>${esc(c.endereco)}${dist?` <span class="muted">(${dist} de você)</span>`:''}</span></div>`:''}
       ${c.obs?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v12l-4 4H5z"/><path d="M9 9h6M9 13h4"/></svg><span style="white-space:pre-wrap">${esc(c.obs)}</span></div>`:''}
     </div>
-    <div class="lastvisit"><b>${textoDias(d)}</b>${ult?` <span class="muted">em ${fmtData(ult)}</span>`:''}
+    <div class="lastvisit"><b>${textoVisitado(c, d)}</b>${ult?` <span class="muted">em ${fmtData(ult)}</span>`:((c.nVisitas || 0) > 0 ? ' <span class="muted">sem data guardada no histórico</span>' : '')}
       ${visitas.length ? `${visitas[0].nota ? `<p class="ultnota">${esc(visitas[0].nota)}</p>` : ''}<button class="linkbtn" id="irHist">Ver histórico (${visitas.length} visita${visitas.length===1?'':'s'})</button>` : ''}</div>
     ${emVisita ? '' : `<div id="avisoPendWrap">${htmlAvisoPend(c)}</div>${blocoVisita(c)}`}
     ${(()=>{ const r = rotaDoDia(false); const i = r ? r.paradas.indexOf(c.id) : -1, dia = rotuloDia(diaSel());
@@ -1397,7 +1403,7 @@ function abrirDetalhe(id){
     const fechar = gravar => {
       if(feito) return; feito = true;
       const n = Math.floor(Number(inp.value));
-      if(gravar && inp.value.trim() !== '' && isFinite(n) && n >= 0 && n <= 9999 && n !== (c.nVisitas || 0)){ c.nVisitas = n; salvar(); toast('Número de visitas: ' + n); }
+      if(gravar && inp.value.trim() !== '' && isFinite(n) && n >= 0 && n <= 9999 && n !== (c.nVisitas || 0)){ c.nVisitas = n; salvar(); toast('Número de visitas: ' + n); feito = true; abrirDetalhe(id); return; }
       b.innerHTML = htmlNVis(c);
     };
     inp.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); fechar(true); } if(e.key === 'Escape'){ e.stopPropagation(); fechar(false); } };
@@ -1993,7 +1999,7 @@ function abrirLista(){
   abrirPainel(`
     <h2>${titulo} <span class="muted" style="font-weight:600">(${lista.length})</span></h2>
     <p class="muted" style="margin:0 0 8px;font-size:14px">${minhaPos?'Ordenados pelos mais próximos de você.':'Ordenados por quem está há mais tempo sem visita. Toque em ◎ para ordenar por distância.'}</p>
-    ${lista.length ? `<ul class="list">${lista.map(({c,d,km}) => `<li><button data-id="${c.id}"><span class="dot${ehP(c)?' p':''}" style="--c:${(STATUS[c.status]||STATUS.nao).cor}"></span><span><span class="nm">${esc(c.nome)}</span><span class="sub">${(STATUS[c.status]||STATUS.nao).label}, ${textoDias(d).toLowerCase()}${pendAbertas(c).length ? ` · 📌 ${pendAbertas(c).length} pendência${pendAbertas(c).length===1?"":"s"}` : ""}</span></span><span class="dist">${fmtDist(km)}</span></button></li>`).join('')}</ul>`
+    ${lista.length ? `<ul class="list">${lista.map(({c,d,km}) => `<li><button data-id="${c.id}"><span class="dot${ehP(c)?' p':''}" style="--c:${(STATUS[c.status]||STATUS.nao).cor}"></span><span><span class="nm">${esc(c.nome)}</span><span class="sub">${(STATUS[c.status]||STATUS.nao).label}, ${textoVisitado(c, d).toLowerCase()}${pendAbertas(c).length ? ` · 📌 ${pendAbertas(c).length} pendência${pendAbertas(c).length===1?"":"s"}` : ""}</span></span><span class="dist">${fmtDist(km)}</span></button></li>`).join('')}</ul>`
       : `<div class="empty">Nenhum cliente neste filtro.</div>`}
     ${htmlListaLugares()}
   `);
