@@ -3029,7 +3029,7 @@ function aplicarSatelite(){
     if(!g.getSource('esri')) g.addSource('esri', {type:'raster', tileSize:256, maxzoom:19,
       tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}']});
     // Fica por cima do mapa limpo e por baixo da rota e dos marcadores
-    const antes = ['rota','clientes','lugares'].find(id => g.getLayer(id));
+    const antes = ['rota-brilho','rota','clientes','lugares'].find(id => g.getLayer(id));
     if(!g.getLayer('satelite')) g.addLayer({id:'satelite', type:'raster', source:'esri'}, antes);
   } else if(g.getLayer('satelite')) g.removeLayer('satelite');
 }
@@ -3043,8 +3043,12 @@ function montarGL(){
   if(!g.getSource('rota')) g.addSource('rota', {type:'geojson', data:geoRota()});
   if(!g.getSource('clientes')) g.addSource('clientes', {type:'geojson', data:geoClientes()});
   if(!g.getSource('lugares')) g.addSource('lugares', {type:'geojson', data:geoLugares()});
-  if(!g.getLayer('rota')) g.addLayer({id:'rota', type:'line', source:'rota', layout:{'line-cap':'round'},
-    paint:{'line-color':escuro() ? '#8FB8FF' : '#14283B', 'line-width':3, 'line-opacity':.75, 'line-dasharray':[2, 2.6]}});
+  // Linha da rota com brilho leve tipo neon (pedido do usuário em 05/10/2026): uma faixa larga, borrada e
+  // quase transparente por baixo do tracejado. O borrão é do próprio MapLibre (placa de vídeo), sem filtro CSS
+  if(!g.getLayer('rota-brilho')) g.addLayer({id:'rota-brilho', type:'line', source:'rota', layout:{'line-cap':'round', 'line-join':'round'},
+    paint:{'line-color':COR_ROTA().brilho, 'line-width':11, 'line-blur':7, 'line-opacity':escuro() ? .5 : .38}});
+  if(!g.getLayer('rota')) g.addLayer({id:'rota', type:'line', source:'rota', layout:{'line-cap':'round', 'line-join':'round'},
+    paint:{'line-color':COR_ROTA().linha, 'line-width':3.5, 'line-opacity':.95, 'line-dasharray':[2, 2.2]}});
   // Nome à direita da cabeça da gota (a cabeça sobe com o tamanho da gota)
   if(!g.getLayer('clientes')) g.addLayer(camadaSimbolos('clientes', tamanhoComSelecao, nomeCliente));
   if(!g.getLayer('lugares')) g.addLayer(camadaSimbolos('lugares', tamanhoGL(false), nomeLugar));
@@ -3056,6 +3060,8 @@ function atualizarGL(){
   glMapa.getSource('clientes').setData(geoClientes());
   glMapa.getSource('lugares').setData(geoLugares());
 }
+// Cores da linha da rota do dia: azul vivo no claro, ciano claro no escuro, com o brilho em volta
+const COR_ROTA = () => escuro() ? {linha:'#A5F3FC', brilho:'#22D3EE'} : {linha:'#1D4ED8', brilho:'#3B82F6'};
 function linhaRotaGL(pontos){
   if(!usarGL) return;
   GL.rota = pontos;
@@ -3352,7 +3358,7 @@ function desenharRota(){
   // Com MapLibre, a linha vai dentro do mapa, por baixo das gotas
   if(linha.length > 1){
     if(usarGL) linhaRotaGL(linha);
-    else L.polyline(linha, {color:escuro() ? '#8FB8FF' : '#14283B', weight:3, opacity:.75, dashArray:'7 8', interactive:false}).addTo(camadaRota);
+    else { L.polyline(linha, {color:COR_ROTA().brilho, weight:11, opacity:.25, interactive:false}).addTo(camadaRota); L.polyline(linha, {color:COR_ROTA().linha, weight:3.5, opacity:.95, dashArray:'7 8', interactive:false}).addTo(camadaRota); }
   }
   cs.forEach((c,i) => visivel(c) && L.marker([c.lat,c.lng], {
     icon:L.divIcon({className:'', html:`<div class="num${r.feitas.includes(c.id)?' ok':''}">${r.feitas.includes(c.id)?'✓':i+1}</div>`, iconSize:[20,20], iconAnchor:[-2,42]}),
