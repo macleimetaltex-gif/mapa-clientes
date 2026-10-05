@@ -97,6 +97,7 @@ var HASH_INICIAL = location.hash || '';
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
 body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-tap-highlight-color:transparent;overflow:hidden}
+[hidden]{display:none!important} /* o atributo hidden vale mesmo quando uma regra define display (a foto vazia aparecia como imagem quebrada) */
 button{font:inherit;color:inherit;cursor:pointer}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 button,a.btn{transition:transform .12s ease,background-color .15s,border-color .15s,box-shadow .15s}
