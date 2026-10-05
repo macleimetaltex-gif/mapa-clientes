@@ -2588,24 +2588,25 @@ function linhaRotaGL(pontos){
 }
 // Qual marcador (cliente ou lugar) está no ponto tocado. Conta direta pela posição de cada gota na
 // tela (não depende do MapLibre já ter redesenhado depois de mover o mapa), com 6 px de folga.
-// Se houver gotas sobrepostas, vale a que está desenhada por cima: lugares, selecionado, mais ao sul.
+// Com gotas sobrepostas (ficaram 80% maiores e se encostam), vale a que tem a CABEÇA mais perto do
+// dedo, e não a desenhada por cima: senão o toque num cliente mexia no vizinho da rota (relato do
+// usuário em 05/10/2026: "não consigo cancelar a seleção"). Empate: selecionado, da rota, mais ao sul.
 function marcadorNoPonto(latlng){
   if(!usarGL || !GL.imagens) return null;
   const p = map.latLngToContainerPoint(latlng), z = map.getZoom();
-  const esc = escalaZoom(z);
-  const lugares = geoLugares().features, visiveis = clientes.filter(passaFiltro);
+  const esc = escalaZoom(z), naRota = idsNaRota();
+  // Candidatos: {camada, props, lat, lng, largura, altura, cabeça acima da ponta, tamanho, prioridade}
+  const cand = [
+    ...geoLugares().features.map(f => ({camada:'lugares', props:f.properties, lat:f.geometry.coordinates[1], lng:f.geometry.coordinates[0], w:32, h:43, cab:26, s:esc, pri:0})),
+    ...clientes.filter(passaFiltro).map(c => ({camada:'clientes', props:{id:c.id}, lat:c.lat, lng:c.lng, w:26, h:35, cab:22, s:esc * fatorCliente(c, naRota), pri:(c.id===selId ? 2 : 0) + (naRota.has(c.id) ? 1 : 0)}))
+  ].map(m => ({...m, t:map.latLngToContainerPoint([m.lat, m.lng])}));
   // Primeiro procura onde o dedo caiu exatamente; só se não achar, aceita 6 px de folga
   for(const folga of [0, 6]){
-    const dentro = (lat, lng, w, h, s) => {
-      const t = map.latLngToContainerPoint([lat, lng]);
-      return Math.abs(p.x - t.x) <= w*s/2 + folga && p.y <= t.y + folga && p.y >= t.y - h*s - folga;
-    };
-    const lugar = lugares.find(f => dentro(f.geometry.coordinates[1], f.geometry.coordinates[0], 32, 43, esc));
-    if(lugar) return {layer:{id:'lugares'}, properties:lugar.properties};
-    const naRota = idsNaRota();
-    const cliente = visiveis.filter(c => dentro(c.lat, c.lng, 26, 35, esc * fatorCliente(c, naRota)))
-      .sort((a,b) => (b.id===selId) - (a.id===selId) || naRota.has(b.id) - naRota.has(a.id) || a.lat - b.lat)[0];
-    if(cliente) return {layer:{id:'clientes'}, properties:{id:cliente.id}};
+    const achado = cand
+      .filter(m => Math.abs(p.x - m.t.x) <= m.w*m.s/2 + folga && p.y <= m.t.y + folga && p.y >= m.t.y - m.h*m.s - folga)
+      .map(m => ({m, d:Math.hypot(p.x - m.t.x, p.y - (m.t.y - m.cab*m.s))}))
+      .sort((a,b) => a.d - b.d || b.m.pri - a.m.pri || a.m.lat - b.m.lat)[0];
+    if(achado) return {layer:{id:achado.m.camada}, properties:achado.m.props};
   }
   return null;
 }
