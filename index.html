@@ -3000,15 +3000,19 @@ function desenharRota(){
   else marcadores.forEach((m, id) => { const c = cli(id); if(c) m.setIcon(iconeDe(c)); });
   const r = rotaDoDia(false); if(!r || !r.paradas.length || rotaOculta) return;
   const cs = r.paradas.map(cli);
+  // Com filtro ou busca: o número só aparece em quem está visível no mapa, e a linha só quando todas
+  // as paradas pendentes estão visíveis (antes a linha e os números ficavam soltos, sem as gotas)
+  const visivel = c => !!c && passaFiltro(c);
   const pend = cs.filter(c=>!r.feitas.includes(c.id));
   const linha = pend.map(c=>[c.lat,c.lng]);
   const ini = inicioDaRota(); if(ini && linha.length) linha.unshift(ini);
+  if(!pend.every(visivel)) linha.length = 0;
   // Com MapLibre, a linha vai dentro do mapa, por baixo das gotas
   if(linha.length > 1){
     if(usarGL) linhaRotaGL(linha);
     else L.polyline(linha, {color:escuro() ? '#8FB8FF' : '#14283B', weight:3, opacity:.75, dashArray:'7 8', interactive:false}).addTo(camadaRota);
   }
-  cs.forEach((c,i) => L.marker([c.lat,c.lng], {
+  cs.forEach((c,i) => visivel(c) && L.marker([c.lat,c.lng], {
     icon:L.divIcon({className:'', html:`<div class="num${r.feitas.includes(c.id)?' ok':''}">${r.feitas.includes(c.id)?'✓':i+1}</div>`, iconSize:[20,20], iconAnchor:[-2,42]}),
     interactive:false, zIndexOffset:800
   }).addTo(camadaRota));
