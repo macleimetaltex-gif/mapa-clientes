@@ -424,6 +424,12 @@ select.inp{appearance:auto;padding-right:8px}
 .dias .cal input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
 .aviso-dia{position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 26px);z-index:1001;display:none;align-items:center;gap:8px;max-width:calc(100% - 110px);background:var(--inv-bg);color:var(--inv-fg);border:0;border-radius:999px;padding:10px 14px;font:600 14px var(--sans);box-shadow:var(--sh-2);text-align:left}
 .aviso-dia.show{display:flex}
+/* Filtro de regiões: barra na parte de baixo, ao lado dos botões redondos; o aviso da rota sobe */
+.regbar{position:fixed;left:10px;right:92px;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);z-index:1000;padding:4px 2px}
+.regbar:empty{display:none}
+body.picking .regbar,body.selecting .regbar,body.desenhando .regbar{display:none}
+body.tem-regioes .aviso-dia{bottom:calc(env(safe-area-inset-bottom,0px) + 74px)}
+body.tem-regioes .desfazer{bottom:calc(env(safe-area-inset-bottom,0px) + 74px)}
 body.picking .aviso-dia,body.selecting .aviso-dia,body.desenhando .aviso-dia{display:none}
 /* ---------- Confirmação ---------- */
 .dialogo{position:fixed;inset:0;z-index:3000;display:none;place-items:center;padding:16px;background:var(--scrim)}
@@ -534,6 +540,7 @@ body.picking .aviso-dia,body.selecting .aviso-dia,body.desenhando .aviso-dia{dis
   </div>
 </div>
 
+<div class="chips regbar" id="chipsReg" role="toolbar" aria-label="Filtrar por região"></div>
 <button class="aviso-dia" id="avisoDia"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span id="avisoDiaTxt"></span></button>
 <div class="selbar" role="dialog" aria-label="Montar rota do dia">
   <p id="selTxt"></p>
@@ -636,7 +643,10 @@ function regioes(){
   }).map(x => ({id:x.id, label:nomeSit(x.label), cor:corSit(x.cor) || PALETA_REG[1]}));
 }
 const regiaoDe = c => (c && c.regiao && regioes().find(r => r.id === c.regiao)) || null;
-const FILTRO_REG = /^reg_([a-z0-9_]{2,24})$/;
+// Filtro de região: barra própria na parte de BAIXO da tela (pedido do usuário), separada do filtro
+// do topo e somada a ele (ex.: região Centro + situação Retornar). null = todas; "-" = sem região
+const KEY_FILTRO_REG = 'mapaClientes.filtroReg';
+let filtroReg = (() => { try{ const f = localStorage.getItem(KEY_FILTRO_REG); return /^([a-z0-9_]{2,24}|-)$/.test(f || '') ? f : null; }catch(e){ return null; } })();
 const RESULTADOS = ['comprou','nao_comprou','retornar','sem']; // opções ao registrar visita
 const TIPOS = {prospect:'Prospecção', cliente:'Cliente da carteira'};
 const DIAS_ATRASO = 30;
@@ -645,8 +655,8 @@ let clientes = carregar();
 // Filtro do topo: o app abre com o último usado (gravado em desenharChips)
 const KEY_FILTRO = 'mapaClientes.filtro';
 let filtro = (() => {
-  // filtro de região ("reg_<id>"): aceito aqui e conferido em desenharChips, quando as regiões já foram lidas
-  try{ const f = localStorage.getItem(KEY_FILTRO); return ['todos','lugares','prospect','atraso', ...Object.keys(STATUS)].includes(f) || FILTRO_REG.test(f || '') ? f : 'todos'; }
+
+  try{ const f = localStorage.getItem(KEY_FILTRO); return ['todos','lugares','prospect','atraso', ...Object.keys(STATUS)].includes(f) ? f : 'todos'; }
   catch(e){ return 'todos'; }
 })();
 let busca = '';
@@ -710,11 +720,13 @@ function passaFiltro(c){
     const t = normal(c.nome+' '+(c.responsavel||'')+' '+(c.endereco||'')+' '+(c.obs||''));
     if(!t.includes(busca)) return false;
   }
+  // Região (barra de baixo): soma com o filtro do topo
+  if(filtroReg && (filtroReg === '-' ? !!regiaoDe(c) : !(regiaoDe(c) && c.regiao === filtroReg))) return false;
   if(filtro === 'todos') return true;
   if(filtro === 'lugares') return false; // só hotéis e casa no mapa
   if(filtro === 'atraso') return atrasado(c);
   if(filtro === 'prospect') return ehP(c);
-  const fr = FILTRO_REG.exec(filtro); if(fr) return !!regiaoDe(c) && c.regiao === fr[1];
+
   return c.status === filtro;
 }
 
@@ -912,15 +924,22 @@ function desenhar(){
 function desenharChips(){
   const regs = regioes();
   // Região do filtro foi apagada (aqui ou em outro aparelho): volta para Todos
-  const fr = FILTRO_REG.exec(filtro); if(fr && !regs.some(r => r.id === fr[1])) filtro = 'todos';
+  if(filtroReg && filtroReg !== '-' && !regs.some(r => r.id === filtroReg)) filtroReg = null;
+  if(!regs.length) filtroReg = null;
+  try{ filtroReg ? localStorage.setItem(KEY_FILTRO_REG, filtroReg) : localStorage.removeItem(KEY_FILTRO_REG); }catch(e){}
   try{ localStorage.setItem(KEY_FILTRO, filtro); }catch(e){}
   const cont = {todos:clientes.length, atraso:clientes.filter(atrasado).length, prospect:clientes.filter(ehP).length};
   Object.keys(STATUS).forEach(k => cont[k] = clientes.filter(c=>c.status===k).length);
-  regs.forEach(r => cont['reg_'+r.id] = clientes.filter(c => c.regiao === r.id).length);
-  // As regiões vêm logo depois de Prospecção (bolinha vazada, com a cor na borda, como a gota)
-  const itens = [['todos','Todos',null], ['prospect','Prospecção','var(--tipo)'], ...regs.map(r => ['reg_'+r.id, r.label, r.cor, 'reg']), ...Object.entries(STATUS).map(([k,s])=>[k,s.label,s.cor]), ['atraso',`${DIAS_ATRASO}+ dias sem visita`,'var(--tipo)']];
+  // Barra de regiões, na parte de baixo da tela (só existe se houver região criada)
+  const semReg = clientes.filter(c => !regiaoDe(c)).length;
+  $('#chipsReg').innerHTML = !regs.length ? '' :
+    `<button class="chip" data-r="" aria-pressed="${!filtroReg}">Todas as regiões</button>` +
+    regs.map(r => `<button class="chip" data-r="${r.id}" aria-pressed="${filtroReg===r.id}" style="--c:${r.cor}"><span class="dot reg"></span>${r.label} <span class="n">${clientes.filter(c => c.regiao === r.id).length}</span></button>`).join('') +
+    (semReg ? `<button class="chip" data-r="-" aria-pressed="${filtroReg==='-'}">Sem região <span class="n">${semReg}</span></button>` : '');
+  document.body.classList.toggle('tem-regioes', !!regs.length);
+  const itens =[['todos','Todos',null], ['prospect','Prospecção','var(--tipo)'], ...Object.entries(STATUS).map(([k,s])=>[k,s.label,s.cor]), ['atraso',`${DIAS_ATRASO}+ dias sem visita`,'var(--tipo)']];
   $('#chips').innerHTML = itens.map(([k,l,cor,tipo]) =>
-    `<button class="chip" data-f="${k}" aria-pressed="${filtro===k}" ${cor?`style="--c:${cor}"`:''}>${cor?`<span class="dot${k==='prospect'?' p':''}${tipo==='reg'?' reg':''}"></span>`:''}${l} <span class="n">${cont[k]}</span></button>`
+    `<button class="chip" data-f="${k}" aria-pressed="${filtro===k}" ${cor?`style="--c:${cor}"`:''}>${cor?`<span class="dot${k==='prospect'?' p':''}"></span>`:''}${l} <span class="n">${cont[k]}</span></button>`
   ).join('');
   // Lugares (hotéis e casa): filtro que esconde os clientes e mostra só eles
   const nLugares = hoteis.length + (R.casa ? 1 : 0);
@@ -928,6 +947,15 @@ function desenharChips(){
   const legado = clientes.filter(c=>c.status==='visitado').length;
   if(legado) $('#chips').insertAdjacentHTML('afterbegin', `<button class="chip revisar" id="revisar">Revisar ${legado} "Visitado"</button>`);
 }
+$('#chipsReg').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if(!b) return;
+  // Tocar de novo na região marcada volta para "Todas as regiões"
+  filtroReg = (b.dataset.r && filtroReg !== b.dataset.r) ? b.dataset.r : null;
+  desenhar();
+  const vis = clientes.filter(passaFiltro);
+  if(filtroReg && vis.length) enquadrar(vis);
+  else if(filtroReg) toast(filtro === 'todos' ? 'Nenhum cliente nesta região ainda. Escolha a região em "Editar dados" do cliente.' : 'Nenhum cliente desta região no filtro de cima.');
+});
 $('#chips').addEventListener('click', e => {
   const b = e.target.closest('.chip'); if(!b) return;
   if(b.id==='revisar'){ revisarLegado(); return; }
@@ -1968,7 +1996,7 @@ function abrirLista(){
     const da = a.d===null ? Infinity : a.d, db = b.d===null ? Infinity : b.d;
     return db - da;
   });
-  const titulo = filtro==='todos' ? 'Clientes' : filtro==='atraso' ? `${DIAS_ATRASO}+ dias sem visita` : filtro==='prospect' ? 'Prospecção' : FILTRO_REG.test(filtro) ? 'Região ' + ((regioes().find(r => 'reg_'+r.id === filtro) || {}).label || '') : (STATUS[filtro] || STATUS.nao).label;
+  const titulo = filtro==='todos' ? 'Clientes' : filtro==='atraso' ? `${DIAS_ATRASO}+ dias sem visita` : filtro==='prospect' ? 'Prospecção' : (STATUS[filtro] || STATUS.nao).label;
   abrirPainel(`
     <h2>${titulo} <span class="muted" style="font-weight:600">(${lista.length})</span></h2>
     <p class="muted" style="margin:0 0 8px;font-size:14px">${minhaPos?'Ordenados pelos mais próximos de você.':'Ordenados por quem está há mais tempo sem visita. Toque em ◎ para ordenar por distância.'}</p>
@@ -2054,7 +2082,7 @@ function abrirRegioes(){
   const regs = regioes(), semRegiao = clientes.filter(c => !regiaoDe(c)).length;
   abrirPainel(`
     <h2>Regiões</h2>
-    <p class="muted" style="margin:0 0 10px;line-height:1.45">A região é a cor da <b>borda</b> da gota no mapa. Depois de criar, escolha a região de cada cliente em "Editar dados". Cada região vira um filtro no topo do mapa.</p>
+    <p class="muted" style="margin:0 0 10px;line-height:1.45">A região é a cor da <b>borda</b> da gota no mapa. Depois de criar, escolha a região de cada cliente em "Editar dados". Cada região vira um filtro na barra de baixo do mapa.</p>
     ${regs.length ? `<ul class="list">${regs.map(r => { const n = clientes.filter(c => c.regiao === r.id).length;
       return `<li><button data-reg="${r.id}"><span class="dot reg" style="--c:${r.cor};width:18px;height:18px"></span><span><span class="nm">${r.label}</span><span class="sub">${n} cliente${n===1?'':'s'}</span></span><span class="dist">Editar</span></button></li>`; }).join('')}</ul>
       <p class="muted" style="font-size:14px;margin:10px 0 0">${semRegiao} cliente${semRegiao===1?'':'s'} sem região.</p>`
