@@ -267,6 +267,8 @@ textarea.inp{height:auto;min-height:88px;padding:12px 14px;resize:vertical;line-
 .lastvisit b{font-family:var(--cond);font-size:18px}
 .lastvisit .ultnota{margin:6px 0 2px;font-size:15px;line-height:1.4;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .lastvisit .linkbtn{display:block;margin-top:4px;padding:6px 0}
+.destaque{animation:destaque 1.8s ease-out;border-radius:var(--r-sm)}
+@keyframes destaque{0%,35%{background:var(--go-soft);box-shadow:0 0 0 6px var(--go-soft)}100%{background:transparent;box-shadow:0 0 0 6px transparent}}
 .hist{list-style:none;margin:0;padding:0}
 .hist li{padding:10px 0;border-top:1px solid var(--line);display:flex;gap:10px}
 .hist li:first-child{border-top:0}
@@ -1281,7 +1283,13 @@ function abrirDetalhe(id){
   };
   ligarBlocoVisita(id);
   ligarPendencias(id);
-  if($('#irHist')) $('#irHist').onclick = () => $('#histTit').scrollIntoView({behavior:'smooth', block:'start'});
+  // Rola o painel até o histórico (conta direta, sem scrollIntoView) e pisca a seção: se a ficha
+  // inteira já cabe na tela, não há o que rolar e o destaque mostra onde o histórico está
+  if($('#irHist')) $('#irHist').onclick = () => {
+    const b = $('#sheetBody'), h = $('#histTit'), lista = h.nextElementSibling;
+    b.scrollTop += h.getBoundingClientRect().top - b.getBoundingClientRect().top - 8;
+    [h, lista].forEach(el => { if(!el) return; el.classList.remove('destaque'); void el.offsetWidth; el.classList.add('destaque'); });
+  };
   mostrarFotos($('#sheetBody'));
   document.querySelectorAll('#sheetBody img[data-foto]').forEach(img => img.onclick = () => verFoto(img.src));
   $('#dRota').onclick = () => { const dentro = alternarNaRota(id), dia = rotuloDia(diaSel()); abrirDetalhe(id); toast(dentro ? `Incluído na rota de ${dia}` : `Retirado da rota de ${dia}`); };
