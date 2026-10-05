@@ -1392,9 +1392,18 @@ function abrirRelatorio(k){
   document.querySelectorAll('.rel-nome').forEach(b => b.onclick = () => abrirDetalhe(b.dataset.id));
   if(!lista.length) return;
   $('#relCsv').onclick = () => {
-    const linhas = [['Data','Início','Fim','Duração (min)','Cliente','Endereço','Resultado','Anotação','Foto']];
-    lista.forEach(({c, v}) => linhas.push([fmtData(v.data), v.semHora ? '' : hhmm(Date.parse(v.data)), v.fim ? hhmm(Date.parse(v.fim)) : '', minVisita(v) ?? '',
-      c.nome, c.endereco || '', STATUS[v.resultado] ? STATUS[v.resultado].label : '', v.nota || '', v.foto ? 'sim' : '']));
+    // Coluna "Pendências": as anotadas no dia para aquele cliente, na primeira visita dele no dia.
+    // Pendência de cliente sem visita no dia ganha uma linha própria no fim
+    const txtPend = id => pend.filter(x => x.c.id === id).map(({p}) => p.txt + (p.feita ? ' (resolvida)' : '')).join(' | ');
+    const jaFoi = new Set();
+    const linhas = [['Data','Início','Fim','Duração (min)','Cliente','Endereço','Resultado','Anotação','Pendências','Foto']];
+    lista.forEach(({c, v}) => {
+      linhas.push([fmtData(v.data), v.semHora ? '' : hhmm(Date.parse(v.data)), v.fim ? hhmm(Date.parse(v.fim)) : '', minVisita(v) ?? '',
+        c.nome, c.endereco || '', STATUS[v.resultado] ? STATUS[v.resultado].label : '', v.nota || '', jaFoi.has(c.id) ? '' : txtPend(c.id), v.foto ? 'sim' : '']);
+      jaFoi.add(c.id);
+    });
+    pend.forEach(({c, p}) => { if(jaFoi.has(c.id)) return; jaFoi.add(c.id);
+      linhas.push([fmtData(p.criada), '', '', '', c.nome, c.endereco || '', '', '(sem visita neste dia)', txtPend(c.id), '']); });
     baixar(`visitas-${k}.csv`, '﻿' + linhas.map(l => l.map(x => `"${String(x).replace(/"/g,'""')}"`).join(';')).join('\r\n'), 'text/csv');
     toast('Planilha salva nos downloads');
   };
