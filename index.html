@@ -271,6 +271,13 @@ textarea.inp{height:auto;min-height:88px;padding:12px 14px;resize:vertical;line-
 .lastvisit b{font-family:var(--cond);font-size:18px}
 .lastvisit .ultnota{margin:6px 0 2px;font-size:15px;line-height:1.4;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .lastvisit .linkbtn{display:block;margin-top:4px;padding:6px 0}
+/* Situações: paleta de cores e o ícone do menu */
+.paleta{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.paleta button{position:relative;width:44px;height:44px;border-radius:50%;background:var(--c);border:3px solid var(--surface);box-shadow:0 0 0 1px var(--line);padding:0}
+.paleta button[aria-pressed="true"]{box-shadow:0 0 0 3px var(--ink)}
+.paleta button i{position:absolute;right:-2px;top:-2px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:3px solid var(--ink-2)}
+.sit-ic{display:grid;grid-template-columns:9px 9px;gap:3px}
+.sit-ic i{width:9px;height:9px;border-radius:50%}
 .destaque{animation:destaque 1.8s ease-out;border-radius:var(--r-sm)}
 @keyframes destaque{0%,35%{background:var(--go-soft);box-shadow:0 0 0 6px var(--go-soft)}100%{background:transparent;box-shadow:0 0 0 6px transparent}}
 .hist{list-style:none;margin:0;padding:0}
@@ -583,13 +590,32 @@ const KEY = 'mapaClientes.v1';
 // O que esta janela leu ou gravou por último em cada chave. Se o aparelho tiver outra coisa, foi outra janela do app
 var VISTO = {};
 // Cor da bolinha = situação. Letra P dentro = prospecção.
-const STATUS = {
+const STATUS_PADRAO = {
   nao:         {label:'Não visitado',  cor:'#8A94A3'},
   comprou:     {label:'Comprou',       cor:'#1F9D55'},
   nao_comprou: {label:'Não comprou',   cor:'#D99A00'},
   retornar:    {label:'Retornar',      cor:'#2563C9'},
   sem:         {label:'Sem interesse', cor:'#C8372D'}
 };
+// Situações editáveis (05/10/2026, pedido do usuário): as 5 padrão podem mudar de nome e de cor, e ele
+// cria outras. Fica em R.situacoes = {edits:{chave:{label,cor}}, extras:[{id,label,cor}]} e vai para a
+// nuvem junto com a casa (item "config"). STATUS é sempre remontado por montarStatus: o nome é limpo
+// aqui (entra em HTML sem esc() em vários lugares) e a cor só vale se for #RRGGBB.
+const STATUS = {};
+const MAX_SIT_EXTRAS = 10;
+const PALETA_SIT = ['#8A94A3','#1F9D55','#D99A00','#2563C9','#C8372D','#7C3AED','#C026D3','#0D9488','#65A30D','#4F46E5','#0EA5E9','#92400E','#475569'];
+const nomeSit = t => String(t == null ? '' : t).replace(/[<>&"'`\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 24);
+const corSit = c => /^#[0-9A-Fa-f]{6}$/.test(c || '') ? c : null;
+function montarStatus(sit){
+  Object.keys(STATUS).forEach(k => delete STATUS[k]);
+  const ed = (sit && typeof sit === 'object' && sit.edits) || {};
+  Object.entries(STATUS_PADRAO).forEach(([k, s]) => { const e = ed[k] || {}; STATUS[k] = {label:nomeSit(e.label) || s.label, cor:corSit(e.cor) || s.cor}; });
+  ((sit && Array.isArray(sit.extras)) ? sit.extras : []).slice(0, MAX_SIT_EXTRAS).forEach(x => {
+    if(x && /^[a-z0-9_]{2,24}$/.test(x.id || '') && !STATUS[x.id] && nomeSit(x.label)) STATUS[x.id] = {label:nomeSit(x.label), cor:corSit(x.cor) || PALETA_SIT[5], extra:true};
+  });
+}
+// R (rotas, casa e agora as situações) é lido mais abaixo no arquivo; aqui lê só as situações
+montarStatus((() => { try{ return JSON.parse(localStorage.getItem('mapaClientes.rotas.v1')).situacoes; }catch(e){ return null; } })());
 const RESULTADOS = ['comprou','nao_comprou','retornar','sem']; // opções ao registrar visita
 const TIPOS = {prospect:'Prospecção', cliente:'Cliente da carteira'};
 const DIAS_ATRASO = 30;
@@ -1919,6 +1945,75 @@ function abrirLista(){
   document.querySelectorAll('.list button[data-id]:not([data-l])').forEach(b => b.onclick = () => abrirDetalhe(b.dataset.id));
 }
 
+/* ================= Situações (Menu > Visitas > Situações) ================= */
+// Remonta STATUS a partir de R.situacoes e, se algo mudou, refaz as gotas, os filtros e o mapa
+function aplicarSituacoes(){
+  const antes = JSON.stringify(STATUS);
+  montarStatus(R.situacoes);
+  if(JSON.stringify(STATUS) === antes) return false;
+  if(!STATUS[filtro] && !['todos','lugares','prospect','atraso'].includes(filtro)) filtro = 'todos';
+  if(typeof gerarImagensGL === 'function') gerarImagensGL(); // cores novas nas gotas do mapa
+  desenhar();
+  return true;
+}
+// R.situacoes continua existindo mesmo vazio: é assim que "voltar ao original" chega aos outros aparelhos
+function gravarSituacoes(){ salvarR(); aplicarSituacoes(); }
+function abrirSituacoes(){
+  const nExtras = Object.values(STATUS).filter(s => s.extra).length;
+  abrirPainel(`
+    <h2>Situações</h2>
+    <p class="muted" style="margin:0 0 10px;line-height:1.45">A situação é a cor da gota no mapa. Toque em uma para mudar o nome ou a cor, ou crie uma nova.</p>
+    <ul class="list">${Object.entries(STATUS).map(([k, s]) => { const n = clientes.filter(c => c.status === k).length;
+      return `<li><button data-sit="${k}"><span class="dot" style="--c:${s.cor}"></span><span><span class="nm">${s.label}</span><span class="sub">${n} cliente${n===1?'':'s'}${s.extra ? ' · criada por você' : ''}</span></span><span class="dist">Editar</span></button></li>`; }).join('')}</ul>
+    ${nExtras < MAX_SIT_EXTRAS ? '<button class="btn primary block" id="sitNova" style="margin-top:14px">+ Nova situação</button>' : `<p class="muted" style="margin:14px 0 0">Limite de ${MAX_SIT_EXTRAS} situações criadas. Apague uma para criar outra.</p>`}
+    <button class="btn block" id="sitVoltar" style="margin-top:8px">Voltar</button>`);
+  document.querySelectorAll('[data-sit]').forEach(b => b.onclick = () => formSituacao(b.dataset.sit));
+  if($('#sitNova')) $('#sitNova').onclick = () => formSituacao(null);
+  $('#sitVoltar').onclick = () => $('#menuBtn').click();
+}
+// k = chave da situação a editar, ou null para criar
+function formSituacao(k){
+  const s = k ? STATUS[k] : null; if(k && !s) return;
+  const padrao = k && STATUS_PADRAO[k];
+  const usadas = Object.entries(STATUS).filter(([kk]) => kk !== k).map(([, x]) => x.cor.toUpperCase());
+  // Situação nova: sugere a primeira cor da paleta que ainda não está em uso
+  let cor = s ? s.cor : (PALETA_SIT.find(c => !usadas.includes(c.toUpperCase())) || PALETA_SIT[5]);
+  const paleta = [...new Set([...(s ? [s.cor] : []), ...PALETA_SIT].map(c => c.toUpperCase()))];
+  const n = k ? clientes.filter(c => c.status === k).length : 0;
+  const mudou = padrao && (s.label !== padrao.label || s.cor.toUpperCase() !== padrao.cor.toUpperCase());
+  abrirPainel(`
+    <h2>${k ? 'Editar situação' : 'Nova situação'}</h2>
+    <label class="f">Nome<input class="inp" id="sitNome" maxlength="24" value="${s ? s.label : ''}" autocomplete="off" placeholder="Ex.: Orçamento enviado"></label>
+    <label class="f">Cor</label>
+    <div class="paleta" id="sitPaleta">${paleta.map(c => `<button type="button" data-c="${c}" style="--c:${c}" aria-pressed="${c === cor.toUpperCase()}" aria-label="Cor ${c}${usadas.includes(c) ? ' (já usada em outra situação)' : ''}">${usadas.includes(c) ? '<i></i>' : ''}</button>`).join('')}</div>
+    <p class="muted" style="font-size:13px;margin:8px 0 0">O pontinho marca as cores já usadas em outra situação.</p>
+    <div class="row" style="margin-top:18px"><button class="btn grow" id="sitCancel">Cancelar</button><button class="btn primary grow" id="sitSalvar">Salvar</button></div>
+    ${mudou ? '<button class="btn block" id="sitPadrao" style="margin-top:8px">Voltar ao nome e à cor originais</button>' : ''}
+    ${s && s.extra ? `<button class="btn danger block" id="sitApagar" style="margin-top:12px">Apagar situação</button>` : ''}`);
+  if(!k) setTimeout(() => $('#sitNome')?.focus(), 260);
+  $('#sitPaleta').onclick = e => { const b = e.target.closest('button'); if(!b) return; cor = b.dataset.c; $('#sitPaleta').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); };
+  $('#sitCancel').onclick = abrirSituacoes;
+  const sit = () => { const x = R.situacoes = R.situacoes || {}; x.edits = x.edits || {}; x.extras = x.extras || []; return x; };
+  $('#sitSalvar').onclick = () => {
+    const nome = nomeSit($('#sitNome').value);
+    if(!nome){ $('#sitNome').focus(); toast('Dê um nome para a situação.'); return; }
+    if(Object.entries(STATUS).some(([kk, x]) => kk !== k && normal(x.label) === normal(nome))){ toast('Já existe uma situação com esse nome.'); return; }
+    const x = sit();
+    if(!k) x.extras.push({id:'s' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), label:nome, cor});
+    else if(padrao){
+      if(nome === padrao.label && cor.toUpperCase() === padrao.cor.toUpperCase()) delete x.edits[k]; else x.edits[k] = {label:nome, cor};
+    } else { const e = x.extras.find(y => y.id === k); if(e){ e.label = nome; e.cor = cor; } }
+    gravarSituacoes(); abrirSituacoes(); toast(k ? 'Situação alterada' : `Situação "${nome}" criada`);
+  };
+  if($('#sitPadrao')) $('#sitPadrao').onclick = () => { delete sit().edits[k]; gravarSituacoes(); abrirSituacoes(); toast('Voltou ao original'); };
+  if($('#sitApagar')) $('#sitApagar').onclick = async () => {
+    if(!await confirmar(`Apagar a situação "${s.label}"?${n ? `\n\n${n} cliente${n===1?' está':'s estão'} nela e volta${n===1?'':'m'} para "${STATUS.nao.label}".` : ''}`, 'Apagar')) return;
+    if(n){ clientes.forEach(c => { if(c.status === k) c.status = 'nao'; }); salvar(); }
+    const x = sit(); x.extras = x.extras.filter(y => y.id !== k);
+    gravarSituacoes(); abrirSituacoes(); toast('Situação apagada');
+  };
+}
+
 /* ================= Menu ================= */
 $('#menuBtn').onclick = () => {
   const mes = new Date(); mes.setDate(1); mes.setHours(0,0,0,0);
@@ -1934,6 +2029,7 @@ $('#menuBtn').onclick = () => {
     ${precisaBackup() && !nuvem.usuario ? `<div class="aviso"><b>${textoBackup()}</b> Salve um agora para não perder seus clientes se o celular der problema.<button class="btn primary block" id="mBackup2" style="margin-top:10px">Salvar backup agora</button></div>` : ''}
     <h3>Visitas</h3>
     <button class="menuitem" id="mRelatorio"><span class="ic">${ICO.relatorio}</span><span>Relatório de visitas<small>Visitas do dia com horário, duração, anotações e fotos</small></span></button>
+    <button class="menuitem" id="mSituacoes"><span class="ic"><span class="sit-ic">${Object.values(STATUS).slice(0,4).map(s => `<i style="background:${s.cor}"></i>`).join('')}</span></span><span>Situações<small>Criar situações novas e mudar o nome e a cor das atuais</small></span></button>
     <h3>Aparência</h3>
     <div class="tema" role="group" aria-label="Tema">
       ${[['auto','Automático'],['claro','Claro'],['escuro','Escuro']].map(([k,l]) => `<button data-tema="${k}" aria-pressed="${prefTema()===k}">${l}</button>`).join('')}
@@ -1952,6 +2048,7 @@ $('#menuBtn').onclick = () => {
     document.querySelectorAll('.tema button').forEach(x => x.setAttribute('aria-pressed', x===b));
   });
   $('#mRelatorio').onclick = () => abrirRelatorio();
+  $('#mSituacoes').onclick = () => abrirSituacoes();
   $('#mImport').onclick = () => $('#fileKml').click();
   $('#mExportKml').onclick = exportarKML;
   $('#mBackup').onclick = exportarBackup;
@@ -2167,7 +2264,7 @@ $('#fileJson').addEventListener('change', async e => {
       ['viagens','salvas'].forEach(n => { if(Array.isArray(j.rotas[n])) j.rotas[n] = j.rotas[n].filter(Boolean).map(limparId); });
     }
     if(Array.isArray(j.hoteis)) j.hoteis = j.hoteis.filter(Boolean).map(limparId);
-    if(j.rotas && typeof j.rotas==='object'){ R = Object.assign(baseR(), j.rotas, {viagemAtiva:R.viagemAtiva}); salvarR(); }
+    if(j.rotas && typeof j.rotas==='object'){ R = Object.assign(baseR(), j.rotas, {viagemAtiva:R.viagemAtiva}); salvarR(); aplicarSituacoes(); }
     if(Array.isArray(j.hoteis)){ hoteis = j.hoteis.filter(h => h && isFinite(h.lat) && isFinite(h.lng) && h.nome); salvarL(); }
     salvar(); filtro='todos'; desenhar(); fecharPainel(); enquadrar(clientes);
     toast(`${clientes.length} clientes restaurados`);
@@ -2398,7 +2495,7 @@ function itensLocais(){
   const m = new Map();
   clientes.forEach(c => m.set('cliente|'+c.id, c));
   hoteis.forEach(h => m.set('hotel|'+h.id, h));
-  m.set('config|config', {casa:R.casa || null, destinoPadrao:R.destinoPadrao});
+  m.set('config|config', {casa:R.casa || null, destinoPadrao:R.destinoPadrao, ...(R.situacoes ? {situacoes:R.situacoes} : {})});
   Object.entries(R.rotas).forEach(([k,r]) => m.set('rota_dia|'+k, r));
   R.salvas.forEach(s => m.set('rota_salva|'+s.id, s));
   R.viagens.forEach(v => m.set('viagem|'+v.id, v));
@@ -2415,7 +2512,11 @@ function aplicarRemoto(tipo, id, dados, apagado){
   else if(tipo==='rota_salva'){ trocar(R.salvas, dados); if(apagado && R.salvaVisivel===id) R.salvaVisivel = null; }
   else if(tipo==='viagem'){ trocar(R.viagens, dados); R.viagens.sort((a,b) => b.inicio.localeCompare(a.inicio)); }
   else if(tipo==='rota_dia'){ if(apagado) delete R.rotas[id]; else R.rotas[id] = dados; }
-  else if(tipo==='config' && !apagado){ R.casa = dados.casa || null; if(dados.destinoPadrao) R.destinoPadrao = dados.destinoPadrao; }
+  else if(tipo==='config' && !apagado){
+    R.casa = dados.casa || null; if(dados.destinoPadrao) R.destinoPadrao = dados.destinoPadrao;
+    // Config enviada por uma versão antiga do app não tem as situações: nesse caso ficam as do aparelho
+    if('situacoes' in dados){ R.situacoes = dados.situacoes; aplicarSituacoes(); }
+  }
 }
 // O que mudou no aparelho e ainda não foi para a nuvem
 function pendentes(st){
@@ -2443,6 +2544,7 @@ function relerDoAparelho(){
       const gravando = (typeof watchId !== 'undefined' && watchId !== null) ? R.viagemAtiva : null;
       R = Object.assign(baseR(), JSON.parse(r));
       if(gravando) R.viagemAtiva = gravando;
+      aplicarSituacoes();
       mudou = true;
     }
   }catch(e){}
@@ -2789,7 +2891,8 @@ function aplicarSatelite(){
 function montarGL(){
   if(!usarGL || !GL.imagens || !GL.estiloPronto) return;
   const g = glMapa;
-  Object.entries(GL.imagens).forEach(([n, d]) => { if(!g.hasImage(n)) g.addImage(n, d, {pixelRatio:DPR_GL}); });
+  // updateImage: a cor de uma situação pode ter mudado (Menu > Situações)
+  Object.entries(GL.imagens).forEach(([n, d]) => { if(g.hasImage(n)) g.updateImage(n, d); else g.addImage(n, d, {pixelRatio:DPR_GL}); });
   aplicarSatelite();
   if(!g.getSource('rota')) g.addSource('rota', {type:'geojson', data:geoRota()});
   if(!g.getSource('clientes')) g.addSource('clientes', {type:'geojson', data:geoClientes()});
