@@ -160,6 +160,7 @@ input[type=date]{color-scheme:inherit}
 .lugar.mini::after{display:none}
 .status svg{flex:none}
 #sheetBody.eh-hotel .so-cliente{display:none}
+#sheetBody.eh-casa label.f:not(.tipo-rot),#sheetBody.eh-casa .foto-campo{display:none} /* minha casa: só o ponto no mapa */
 .chip .lugar.mini{width:20px;height:20px;border-radius:6px;border-width:1.5px}
 /* Ponto azul: o pulso anima só transform e opacity (a placa de vídeo faz, sem redesenhar a página) */
 .me{position:relative;width:18px;height:18px;border-radius:50%;background:#2F7BF6;border:3px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
@@ -1117,7 +1118,7 @@ function segStatus(atual, chaves){
 const botaoLugar = k => `<button type="button" data-t="${k}" style="--c:${LUGAR[k].cor}" aria-pressed="false"><span class="lugar mini" style="--c:${LUGAR[k].cor};width:20px;height:20px;border-radius:6px">${svgLugar(k,12)}</span>${k==='posto' ? 'Posto' : LUGAR[k].rotulo}</button>`;
 function segTipo(atual){
   return `<div class="seg" id="segTipo">${Object.entries(TIPOS).map(([k,l]) =>
-    `<button type="button" data-t="${k}" style="--c:var(--tipo)" aria-pressed="${k===atual}"><span class="dot${k==='prospect'?' p':''}" style="${k==='prospect'?'width:16px;height:16px':''}"></span>${l}</button>`).join('')}${TIPOS_LUGAR.map(botaoLugar).join('')}</div>`;
+    `<button type="button" data-t="${k}" style="--c:var(--tipo)" aria-pressed="${k===atual}"><span class="dot${k==='prospect'?' p':''}" style="${k==='prospect'?'width:16px;height:16px':''}"></span>${l}</button>`).join('')}${[...TIPOS_LUGAR, 'casa'].map(botaoLugar).join('')}</div>`;
 }
 function ligarTipo(editando){
   const seg = $('#segTipo'); if(!seg) return;
@@ -1125,11 +1126,13 @@ function ligarTipo(editando){
     const b = e.target.closest('button'); if(!b) return;
     seg.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b));
     // Lugar não tem responsável nem situação
-    const L_ = LUGAR[b.dataset.t], lugar = TIPOS_LUGAR.includes(b.dataset.t);
+    const L_ = LUGAR[b.dataset.t], casa = b.dataset.t === 'casa', lugar = casa || TIPOS_LUGAR.includes(b.dataset.t);
     $('#sheetBody').classList.toggle('eh-hotel', lugar);
-    $('#fTitulo').textContent = lugar ? (editando ? `Transformar em ${L_.nome}` : `Novo ${L_.nome}`) : (editando ? 'Editar cliente' : 'Novo cliente');
-    $('#fSave').textContent = lugar ? (editando ? `Transformar em ${L_.nome}` : `Salvar ${L_.nome}`) : 'Salvar cliente';
-    $('#fObs').placeholder = lugar ? L_.obs : 'Ex.: compra às sextas, falar com o gerente';
+    // "Minha casa" é um local só, sem nome nem telefone: guarda apenas o ponto no mapa
+    $('#sheetBody').classList.toggle('eh-casa', casa);
+    $('#fTitulo').textContent = casa ? 'Minha casa' : lugar ? (editando ? `Transformar em ${L_.nome}` : `Novo ${L_.nome}`) : (editando ? 'Editar cliente' : 'Novo cliente');
+    $('#fSave').textContent = casa ? 'Marcar como minha casa' : lugar ? (editando ? `Transformar em ${L_.nome}` : `Salvar ${L_.nome}`) : 'Salvar cliente';
+    $('#fObs').placeholder = lugar && !casa ? L_.obs : 'Ex.: compra às sextas, falar com o gerente';
     $('#fAvisoLugar') && ($('#fAvisoLugar').hidden = !(lugar && editando));
   };
 }
@@ -1152,7 +1155,7 @@ function abrirFormulario(pos, id){
       <input class="inp" id="fTel" value="${esc(c.telefone)}" type="tel" inputmode="tel" autocomplete="off"></label>
     <label class="f">Endereço
       <input class="inp" id="fEnd" value="${esc(c.endereco)}" autocomplete="off" placeholder="${id?'':'Buscando endereço…'}"></label>
-    <label class="f">Tipo</label>${segTipo(c.tipo||'cliente')}
+    <label class="f tipo-rot">Tipo</label>${segTipo(c.tipo||'cliente')}
     ${id ? `<p class="muted" id="fAvisoLugar" hidden style="font-size:14px;line-height:1.45;margin:10px 0 0">Ele sai da lista de clientes e passa a aparecer em Lugares, com o ícone próprio.${(c.visitas||[]).length ? ` O histórico de ${(c.visitas||[]).length} visita${(c.visitas||[]).length===1?'':'s'} será apagado.` : ''}</p>` : ''}
     <div class="so-cliente"><label class="f">Situação</label>${segStatus(c.status==='visitado'?'':c.status)}</div>
     <label class="f">Observações
@@ -1170,6 +1173,18 @@ function abrirFormulario(pos, id){
   $('#fCancel').onclick = () => id ? abrirDetalhe(id) : fecharPainel();
   $('#fSave').onclick = async () => {
     const nome = $('#fNome').value.trim();
+    // Tipo "Minha casa": marca este ponto como a casa (uma só). Na edição, o cliente vira a casa
+    if(tipoEscolhido() === 'casa'){
+      if(R.casa && !await confirmar('Você já tem uma casa marcada no mapa. Substituir por este local?', 'Substituir')) return;
+      if(id){
+        const nv = (c.visitas||[]).length;
+        if(nv && !await confirmar(`"${c.nome}" tem ${nv} visita${nv===1?'':'s'} registrada${nv===1?'':'s'}. Ao virar a sua casa, ele sai dos clientes e o histórico de visitas será apagado.`, 'Apagar e marcar como casa')) return;
+        clientes = clientes.filter(x => x.id !== id); selId = null; salvar();
+      }
+      R.casa = {lat:c.lat, lng:c.lng}; salvarR(); desenhar(); desenharRota(); abrirCasa();
+      toast('Minha casa marcada no mapa');
+      return;
+    }
     if(!nome){ $('#fNome').focus(); toast('Coloque pelo menos o nome.'); return; }
     const tipo = tipoEscolhido();
     if(TIPOS_LUGAR.includes(tipo)){
