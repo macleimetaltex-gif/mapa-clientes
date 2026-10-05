@@ -1518,6 +1518,10 @@ function iniciarVisita(id){
 }
 function encerrarVisita(motivo, fimMs){
   if(!va || va.fim) return;
+  // O que ficou digitado sem tocar em "Anotar comentário" / "Adicionar pendência" não se perde
+  const solto = $('#vaTxt') ? $('#vaTxt').value.trim() : '', pendSolta = $('#pendTxt') && visitaAbertaEm(cli(selId)) ? $('#pendTxt').value.trim() : '';
+  if(solto){ va.notas = va.notas || []; va.notas.push({t:Date.now(), txt:solto}); }
+  if(pendSolta){ const cp = cli(va.clienteId); if(cp) novaPendencia(cp, pendSolta); }
   va.fim = fimMs || Date.now(); va.motivo = motivo; salvarVA();
   try{ navigator.vibrate && navigator.vibrate(200); }catch(e){}
   formVisita(va.clienteId);
