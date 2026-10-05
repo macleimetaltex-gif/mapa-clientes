@@ -3264,6 +3264,72 @@ const camadaRota = L.layerGroup().addTo(map);
 const camadaViagem = L.layerGroup().addTo(map);
 let trilhaAtiva = null;
 
+/* ---------- Rota do dia pelas ruas (OSRM) ---------- */
+// Pedido do usuário em 05/10/2026: a linha da rota de clientes segue as ruas e a "Melhor ordem" usa o
+// tempo de carro, não a linha reta. Usa o mesmo servidor público do OSRM de "Minhas rotas" (gratuito,
+// sem chave e sem garantia): sem internet ou sem resposta, tudo volta para a linha reta.
+const OSRM = 'https://router.project-osrm.org';
+const ruasCache = new Map(); // chave dos pontos → {linha, km, min} ou {falhou: quando}
+let ruasPedido = null;
+async function osrm(caminho){
+  const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 10000);
+  try{ const r = await fetch(OSRM + caminho, {signal:ctrl.signal}); const j = await r.json(); return j && j.code === 'Ok' ? j : null; }
+  catch(e){ return null; }
+  finally{ clearTimeout(t); }
+}
+const coordsOsrm = pts => pts.map(p => `${(+p[1]).toFixed(6)},${(+p[0]).toFixed(6)}`).join(';');
+// Chave do traçado: só as paradas (a partida fica de fora, para você andando não pedir outro a toda hora)
+const chaveRuas = pts => (pts.temIni ? 'i|' : '') + (pts.temIni ? pts.slice(1) : pts).map(p => (+p[0]).toFixed(5) + ',' + (+p[1]).toFixed(5)).join(';');
+// Partida (onde você está, ou a casa) + paradas que faltam, na ordem da rota mostrada.
+// pts.temIni diz se o primeiro ponto é a partida
+function pontosDaRota(){
+  const r = rotaDoDia(false); if(!r) return [];
+  const pts = r.paradas.filter(id => !r.feitas.includes(id)).map(cli).filter(Boolean).map(c => [c.lat, c.lng]);
+  const ini = inicioDaRota(); if(ini && pts.length){ pts.unshift(ini); pts.temIni = true; }
+  return pts;
+}
+// Devolve o traçado se já estiver guardado; senão pede ao OSRM e devolve null (a linha reta fica no
+// lugar até chegar). Mesmas paradas com a partida a menos de 300 m da usada no traçado: vale o guardado.
+// Passou disso (você dirigindo): pede outro, no máximo um a cada 15 s, e o antigo fica até o novo chegar.
+let ruasUltimo = 0;
+function tracadoPelasRuas(pts){
+  if(pts.length < 2 || pts.length > 100) return null;
+  const k = chaveRuas(pts), c = ruasCache.get(k), ini = pts.temIni ? pts[0] : null;
+  const velho = c && c.linha ? c : null;
+  if(velho && (!ini || dist(velho.ini, ini) < 300)) return velho;
+  if((c && c.falhou && Date.now() - c.falhou < 60000) || ruasPedido || !navigator.onLine || (velho && Date.now() - ruasUltimo < 15000)) return velho;
+  ruasPedido = k; ruasUltimo = Date.now();
+  (async () => {
+    const j = await osrm(`/route/v1/driving/${coordsOsrm(pts)}?overview=full&geometries=geojson`);
+    const rt = j && j.routes && j.routes[0];
+    if(ruasCache.size > 30) ruasCache.clear();
+    ruasCache.set(k, rt ? {linha:simplificar(rt.geometry.coordinates.map(x => [+x[1].toFixed(5), +x[0].toFixed(5)]), 5), km:rt.distance/1000, min:Math.round(rt.duration/60), ini}
+                        : {...(velho || {}), falhou:Date.now()});
+    ruasPedido = null;
+    // Redesenha se a resposta é da rota que está na tela; se a tela já é de outra rota, pede a dela
+    const atual = chaveRuas(pontosDaRota());
+    if(rt ? true : atual !== k){ desenharRota(); atualizarResumoRota(); }
+  })();
+  return velho;
+}
+// Texto "Faltam…" do painel da rota: pelas ruas quando o traçado já chegou, senão em linha reta
+function textoFaltam(){
+  const pts = pontosDaRota(); if(pts.length < 2) return '';
+  const ruas = tracadoPelasRuas(pts);
+  if(ruas) return `Faltam ${fmtKm(ruas.km)} pelas ruas, cerca de ${fmtDur(ruas.min * 60000)} de carro`;
+  let m = 0; for(let i = 1; i < pts.length; i++) m += dist(pts[i-1], pts[i]);
+  return `Faltam cerca de ${fmtKm(m/1000)} em linha reta`;
+}
+function atualizarResumoRota(){ const el = $('#rotaResumo'); if(el) el.textContent = textoFaltam(); }
+// Tempo de carro entre todos os pontos (segundos), para a "Melhor ordem". null se o serviço não responder
+async function matrizRuas(pts){
+  if(pts.length < 3 || pts.length > 100 || !navigator.onLine) return null;
+  const j = await osrm(`/table/v1/driving/${coordsOsrm(pts)}?annotations=duration`);
+  const M = j && j.durations;
+  if(!Array.isArray(M) || M.length !== pts.length) return null;
+  return M.map(l => l.map(v => v == null ? 1e7 : v)); // sem caminho entre dois pontos: custo enorme
+}
+
 function desenharRota(){
   camadaRota.clearLayers();
   linhaRotaGL([]);
@@ -3278,8 +3344,11 @@ function desenharRota(){
   const visivel = c => !!c && passaFiltro(c);
   const pend = cs.filter(c=>!r.feitas.includes(c.id));
   const linha = pend.map(c=>[c.lat,c.lng]);
-  const ini = inicioDaRota(); if(ini && linha.length) linha.unshift(ini);
+  const ini = inicioDaRota(); if(ini && linha.length){ linha.unshift(ini); linha.temIni = true; }
   if(!pend.every(visivel)) linha.length = 0;
+  // Pelas ruas, se o traçado já chegou; senão a linha reta fica no lugar enquanto ele é pedido
+  const ruas = linha.length > 1 ? tracadoPelasRuas(linha) : null;
+  if(ruas) linha.splice(0, linha.length, ...ruas.linha);
   // Com MapLibre, a linha vai dentro do mapa, por baixo das gotas
   if(linha.length > 1){
     if(usarGL) linhaRotaGL(linha);
@@ -3324,17 +3393,28 @@ function custo(ordem, ini){
   ordem.forEach(id => { const c = cli(id); if(p) t += dist(p,[c.lat,c.lng]); p = [c.lat,c.lng]; });
   return t;
 }
-function otimizarRota(){
+// Melhor ordem das paradas que faltam: vizinho mais próximo + melhoria 2-opt. O custo entre dois pontos
+// é o tempo de carro do OSRM (matrizRuas); se o serviço não responder, a distância em linha reta
+async function otimizarRota(){
   const r = rotaDoDia(false); if(!r) return;
   const feitas = r.paradas.filter(id=>r.feitas.includes(id));
-  let resto = r.paradas.filter(id=>!r.feitas.includes(id));
-  const ini = inicioDaRota();
-  // vizinho mais próximo
-  const ordem = []; let p = ini || (resto.length ? [cli(resto[0]).lat, cli(resto[0]).lng] : null);
+  const ids = r.paradas.filter(id=>!r.feitas.includes(id) && cli(id));
+  const ini = inicioDaRota(), antes = r.paradas.join();
+  // pontos: [partida (se houver), ...paradas]; os cálculos usam a posição de cada um nesta lista
+  const P = [...(ini ? [ini] : []), ...ids.map(id => { const c = cli(id); return [c.lat, c.lng]; })];
+  const M = await matrizRuas(P);
+  // a rota mudou enquanto o serviço respondia (outra janela, sincronização): não mexe
+  if(rotaDoDia(false) !== r || r.paradas.join() !== antes) return;
+  const d = (a, b) => M ? M[a][b] : dist(P[a], P[b]);
+  const off = ini ? 1 : 0;
+  let resto = ids.map((_, i) => i + off);
+  const custoDe = ord => { let t = 0, p = ini ? 0 : null; ord.forEach(i => { if(p !== null) t += d(p, i); p = i; }); return t; };
+  // vizinho mais próximo (sem partida conhecida, começa pela primeira parada)
+  const ordem = []; let p = ini ? 0 : resto[0];
   while(resto.length){
     let m = 0, md = Infinity;
-    resto.forEach((id,i) => { const c = cli(id); const d = dist(p,[c.lat,c.lng]); if(d < md){ md = d; m = i; } });
-    const id = resto.splice(m,1)[0]; ordem.push(id); const c = cli(id); p = [c.lat,c.lng];
+    resto.forEach((i, pos) => { const x = d(p, i); if(x < md){ md = x; m = pos; } });
+    p = resto.splice(m, 1)[0]; ordem.push(p);
   }
   // melhoria 2-opt
   let melhorou = true, voltas = 0;
@@ -3342,13 +3422,14 @@ function otimizarRota(){
     melhorou = false;
     for(let i=0;i<ordem.length-1;i++) for(let k=i+1;k<ordem.length;k++){
       const nova = [...ordem.slice(0,i), ...ordem.slice(i,k+1).reverse(), ...ordem.slice(k+1)];
-      if(custo(nova,ini) + 1 < custo(ordem,ini)){ ordem.splice(0, ordem.length, ...nova); melhorou = true; }
+      if(custoDe(nova) + 1 < custoDe(ordem)){ ordem.splice(0, ordem.length, ...nova); melhorou = true; }
     }
   }
-  r.paradas = [...feitas, ...ordem];
+  r.paradas = [...feitas, ...ordem.map(i => ids[i - off])];
   salvarR(); desenharRota();
   const deCasa = R.casa && ini && ini[0] === R.casa.lat && ini[1] === R.casa.lng;
-  toast(ini ? (deCasa ? 'Ordem ajustada a partir da sua casa' : 'Ordem ajustada a partir de onde você está') : 'Ordem ajustada');
+  const de = ini ? (deCasa ? ' a partir da sua casa' : ' a partir de onde você está') : '';
+  toast(M ? `Ordem ajustada pelas ruas${de}` : P.length >= 3 ? `Sem o serviço de rotas agora: ordem ajustada em linha reta${de}` : `Ordem ajustada${de}`);
 }
 function linksGoogle(){
   const r = rotaDoDia(false); if(!r) return [];
@@ -3418,8 +3499,7 @@ function htmlDia(){
   } else {
     const cs = r.paradas.map(cli);
     const pend = cs.filter(c=>!r.feitas.includes(c.id));
-    const km = custo(pend.map(c=>c.id), inicioDaRota())/1000;
-    h += `<p class="muted" style="margin:0 0 10px">${r.feitas.length} de ${cs.length} visitadas${pend.length?`. Faltam cerca de ${fmtKm(km)} em linha reta`:''}.</p>
+    h += `<p class="muted" style="margin:0 0 10px">${r.feitas.length} de ${cs.length} visitadas.${pend.length ? ` <span id="rotaResumo">${textoFaltam()}</span>${textoFaltam() ? '.' : ''}` : ''}</p>
       <ol class="stops">${cs.map((c,i)=>{ const f = r.feitas.includes(c.id); const s = STATUS[c.status]||STATUS.nao;
         return `<li class="${f?'done':''}">
           <button class="chk" data-rt="feita" data-id="${c.id}" aria-label="${f?'Desmarcar':'Marcar como visitado'}">${f?'✓':i+1}</button>
@@ -3819,12 +3899,12 @@ $('#sheetBody').addEventListener('click', async e => {
   if(a==='dia') escolherDia(b.dataset.k);
   if(a==='aba') abrirRotas(b.dataset.v);
   if(a==='selecionar') entrarSelecao();
-  if(a==='filtro'){ const rr = rotaDoDia(true); clientes.filter(passaFiltro).forEach(c=>{ if(!rr.paradas.includes(c.id)) rr.paradas.push(c.id); }); salvarR(); otimizarRota(); abrirRotas('dia'); }
+  if(a==='filtro'){ const rr = rotaDoDia(true); clientes.filter(passaFiltro).forEach(c=>{ if(!rr.paradas.includes(c.id)) rr.paradas.push(c.id); }); salvarR(); b.disabled = true; await otimizarRota(); abrirRotas('dia'); }
   if(a==='feita' && r){ const id = b.dataset.id; r.feitas = r.feitas.includes(id) ? r.feitas.filter(x=>x!==id) : [...r.feitas, id]; salvarR(); desenharRota(); abrirRotas('dia'); }
   if(a==='abrir') abrirDetalhe(b.dataset.id);
   if((a==='sobe'||a==='desce') && r){ const i = +b.dataset.i, j = a==='sobe' ? i-1 : i+1; [r.paradas[i], r.paradas[j]] = [r.paradas[j], r.paradas[i]]; salvarR(); desenharRota(); abrirRotas('dia'); }
   if(a==='tirar'){ alternarNaRota(b.dataset.id); abrirRotas('dia'); }
-  if(a==='otimizar'){ otimizarRota(); abrirRotas('dia'); }
+  if(a==='otimizar'){ b.disabled = true; b.textContent = 'Calculando…'; await otimizarRota(); abrirRotas('dia'); }
   if(a==='ocultarRota'){ const esconder = !rotaOculta; mostrarRota(!esconder); if(esconder){ fecharPainel(); toast('Rota escondida do mapa. Ela continua salva.'); } else abrirRotas('dia'); }
   if(a==='limpar' && await confirmar(`Apagar a rota de ${rotuloDia(diaSel())}?`)){ delete R.rotas[diaSel()]; salvarR(); desenharRota(); abrirRotas('dia'); }
   if(a==='repetir'){ const src = R.rotas[b.dataset.k]; const rr = rotaDoDia(true); rr.paradas = src.paradas.filter(cli); rr.feitas = []; salvarR(); desenharRota(); abrirRotas('dia'); toast(`Rota copiada para ${rotuloDia(diaSel())}`); }
