@@ -3370,8 +3370,7 @@ let modoSelecao = false;
 function entrarSelecao(){
   modoSelecao = true; fecharPainel(); mostrarRota(true);
   document.body.classList.add('selecting'); atualizarSelbar();
-  const r = rotaDoDia(false);
-  if(!(r && r.paradas.length) && clientes.length) enquadrar(clientes.filter(passaFiltro));
+  // O mapa fica onde está (pedido do usuário em 05/10/2026): antes, com a rota vazia, afastava para mostrar todos
 }
 function sairSelecao(){ modoSelecao = false; document.body.classList.remove('selecting'); abrirRotas('dia'); }
 function atualizarSelbar(){
