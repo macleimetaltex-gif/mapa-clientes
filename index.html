@@ -1486,7 +1486,7 @@ async function enviarFotos(){
 }
 
 /* ================= Visita com cronômetro ================= */
-// "Registrar visita" inicia a visita e grava a hora. Encerra pelo botão ou sozinha quando você se afasta
+// "Iniciar visita" (antes "Registrar visita") inicia a visita e grava a hora. Encerra pelo botão ou sozinha quando você se afasta
 // mais de 50 m do local (2 leituras do GPS com pelo menos 10 s entre elas; desconta a margem de erro).
 // O local de referência é onde você estava ao iniciar (se estava a até 150 m do cliente) ou o próprio
 // cliente; nesse caso só "arma" quando o GPS confirmar que você chegou. Se o app ficou parado (tela
@@ -1651,7 +1651,7 @@ function blocoVisita(c){
     <button class="btn primary block" id="dEncerrar">${ok}Encerrar visita</button>
     <button class="btn block" id="dCancelaVisita" style="margin-top:8px">Cancelar visita</button>`;
   if(va && va.clienteId === c.id && va.fim) return `<button class="btn primary block" id="dResultado">${ok}Registrar resultado da visita</button>`;
-  return `<button class="btn primary block" id="dVisita">${ok}Registrar visita</button>
+  return `<button class="btn primary block" id="dVisita"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.500.860l10.500-6.500a1 1 0 0 0 0-1.720L9.500 4.640A1 1 0 0 0 8 5.500z"/></svg>Iniciar visita</button>
     <button class="linkbtn" id="dVisitaManual" style="display:block;margin:10px auto 2px">Já visitei · registrar sem cronômetro</button>`;
 }
 function ligarBlocoVisita(id){
