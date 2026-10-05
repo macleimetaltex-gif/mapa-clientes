@@ -1234,18 +1234,23 @@ function abrirDetalhe(id){
   const wa = tel ? (tel.length<=11 ? '55'+tel : tel) : '';
   const visitas = [...(c.visitas||[])].sort((a,b)=> b.data.localeCompare(a.data));
   const dist = fmtDist(distKm(c));
+  // Em visita (pedido do usuário em 05/10/2026): o cronômetro, os comentários e as pendências vêm
+  // primeiro, para anotar as demandas sem rolar a tela; os dados do cliente ficam embaixo
+  const emVisita = visitaAbertaEm(c);
+  const hFachada = (() => { const f = fachadaAtual(c); return f ? `<div class="fachada"><img data-foto="${esc(f.id)}" data-nuvem="${esc(f.nuvem||'')}" alt="Fachada" hidden><span>Fachada em ${fmtData(f.data)}</span></div>` : ''; })();
+  const hPend = `<div id="pendencias">${htmlPendencias(c)}</div>`;
   abrirPainel(`
-    ${(() => { const f = fachadaAtual(c); return f ? `<div class="fachada"><img data-foto="${esc(f.id)}" data-nuvem="${esc(f.nuvem||'')}" alt="Fachada" hidden><span>Fachada em ${fmtData(f.data)}</span></div>` : ''; })()}
+    ${emVisita ? '' : hFachada}
     <span class="status" style="--c:${s.cor}"><span class="dot"></span>${c.status==='visitado'?'Visitado (revisar)':s.label}</span>${ehP(c)?'<span class="tag">P Prospecção</span>':''}
     <h2>${esc(c.nome)}</h2>
+    ${emVisita ? `${blocoVisita(c)}${hPend}${botoesVisita()}<h3>Dados do cliente</h3>${hFachada}` : ''}
     <div class="facts">
       ${c.responsavel?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>${esc(c.responsavel)}</span></div>`:''}
       ${c.endereco?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-7.2 7-12a7 7 0 0 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg><span>${esc(c.endereco)}${dist?` <span class="muted">(${dist} de você)</span>`:''}</span></div>`:''}
       ${c.obs?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v12l-4 4H5z"/><path d="M9 9h6M9 13h4"/></svg><span style="white-space:pre-wrap">${esc(c.obs)}</span></div>`:''}
     </div>
     <div class="lastvisit"><b>${textoDias(d)}</b>${ult?` <span class="muted">em ${fmtData(ult)}</span>`:''}</div>
-    <div id="avisoPendWrap">${htmlAvisoPend(c)}</div>
-    ${blocoVisita(c)}
+    ${emVisita ? '' : `<div id="avisoPendWrap">${htmlAvisoPend(c)}</div>${blocoVisita(c)}`}
     ${(()=>{ const r = rotaDoDia(false); const i = r ? r.paradas.indexOf(c.id) : -1, dia = rotuloDia(diaSel());
       return `<button class="btn block" id="dRota" style="margin-top:8px">${i>=0?`Parada ${i+1} da rota de ${dia} (tirar)`:`Incluir na rota de ${dia}`}</button>`; })()}
     <div class="row" style="margin-top:8px">
@@ -1253,7 +1258,7 @@ function abrirDetalhe(id){
       <a class="btn grow" href="https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}" target="_blank" rel="noopener">Google Maps</a>
       <a class="btn grow" href="https://waze.com/ul?ll=${c.lat},${c.lng}&navigate=yes" target="_blank" rel="noopener">Waze</a>
     </div>
-    <div id="pendencias">${htmlPendencias(c)}</div>
+    ${emVisita ? '' : hPend}
     <h3>Mudar situação</h3>
     ${segStatus(c.status)}
     <h3>Histórico de visitas</h3>
@@ -1588,6 +1593,7 @@ function htmlNotasVisita(){
   const ns = (va && va.notas) || [];
   return ns.length ? `<ul class="notas">${ns.map((n, i) => `<li><span>${hhmm(n.t)}</span><p>${esc(n.txt)}</p><button class="x" data-nota="${i}" aria-label="Apagar anotação">×</button></li>`).join('')}</ul>` : '';
 }
+const visitaAbertaEm = c => !!(va && c && va.clienteId === c.id && !va.fim);
 const pendAbertas = c => (c.pendencias || []).filter(p => !p.feita);
 function novaPendencia(c, txt){
   c.pendencias = c.pendencias || [];
@@ -1599,11 +1605,11 @@ function htmlPendencias(c){
   return `<h3>Pendências${abertas.length ? ` <span class="qtd-pend">${abertas.length}</span>` : ''}</h3>
     ${abertas.length ? `<ul class="pend">${abertas.map(p => `<li><button class="pchk" data-p="${esc(p.id)}" aria-label="Marcar como resolvida"></button><div><p>${esc(p.txt)}</p><small>pedida em ${fmtData(p.criada)}</small></div></li>`).join('')}</ul>`
       : '<p class="muted" style="margin:0 0 6px">Nenhuma pendência em aberto.</p>'}
-    <div id="novaPend" hidden>
-      <textarea class="inp" id="pendTxt" rows="2" placeholder="Ex.: trazer catálogo novo, cotar item 4521"></textarea>
+    <div id="novaPend" ${visitaAbertaEm(c) ? '' : 'hidden'}>
+      <textarea class="inp" id="pendTxt" rows="2" placeholder="${visitaAbertaEm(c) ? 'Pendência: o que ficou para resolver depois. ' : ''}Ex.: trazer catálogo novo, cotar item 4521"></textarea>
       <div class="row" style="margin-top:6px"><button class="btn" id="pendCodigo">${svgCodigo}Código</button><button class="btn primary grow" id="pendAdd">Adicionar pendência</button></div>
     </div>
-    <button class="linkbtn" id="pendAbrir">+ Nova pendência</button>
+    <button class="linkbtn" id="pendAbrir" ${visitaAbertaEm(c) ? 'hidden' : ''}>+ Nova pendência</button>
     ${feitas.length ? `<details class="pend-feitas"><summary>${feitas.length} resolvida${feitas.length===1?'':'s'}</summary><ul class="pend">${feitas.map(p => `<li class="feita"><button class="pchk ok" data-p="${esc(p.id)}" aria-label="Reabrir">✓</button><div><p>${esc(p.txt)}</p><small>resolvida em ${fmtData(p.feita)}</small></div><button class="x" data-pdel="${esc(p.id)}" aria-label="Apagar pendência">×</button></li>`).join('')}</ul></details>` : ''}`;
 }
 const htmlAvisoPend = c => { const n = pendAbertas(c).length; return n ? `<button class="aviso-pend" id="irPend">📌 ${n} pendência${n===1?'':'s'} deste cliente</button>` : ''; };
@@ -1639,21 +1645,22 @@ function blocoVisita(c){
   if(va && va.clienteId === c.id && !va.fim) return `
     <div class="emvisita"><span class="pulso"></span><div><b>Em visita desde ${hhmm(va.inicio)}</b> · <span id="vaTempo">${fmtMin(minutosEntre(va.inicio, Date.now()))}</span>
       <small>${va.chegou ? 'Encerra sozinha quando você se afastar mais de 50 m.' : 'Encerra sozinha quando você se afastar 50 m. O GPS ainda não confirmou que você chegou.'}</small></div></div>
+    <h3>Comentários da visita</h3>
     <div class="anotar">
       <div id="vaNotas">${htmlNotasVisita()}</div>
-      <textarea class="inp" id="vaTxt" rows="2" placeholder="Anotar: pedido, código de item, recado do cliente…"></textarea>
+      <textarea class="inp" id="vaTxt" rows="2" placeholder="Comentário: pedido, código de item, recado do cliente…"></textarea>
       <div class="row" style="margin-top:6px">
         <button class="btn" id="vaCodigo">${svgCodigo}Código</button>
-        <button class="btn grow" id="vaPend">Pendência</button>
-        <button class="btn dark grow" id="vaAnotar">Anotar</button>
+        <button class="btn dark grow" id="vaAnotar">Anotar comentário</button>
       </div>
-    </div>
-    <button class="btn primary block" id="dEncerrar">${ok}Encerrar visita</button>
-    <button class="btn block" id="dCancelaVisita" style="margin-top:8px">Cancelar visita</button>`;
+    </div>`;
   if(va && va.clienteId === c.id && va.fim) return `<button class="btn primary block" id="dResultado">${ok}Registrar resultado da visita</button>`;
   return `<button class="btn primary block" id="dVisita"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.500.860l10.500-6.500a1 1 0 0 0 0-1.720L9.500 4.640A1 1 0 0 0 8 5.500z"/></svg>Iniciar visita</button>
     <button class="linkbtn" id="dVisitaManual" style="display:block;margin:10px auto 2px">Já visitei · registrar sem cronômetro</button>`;
 }
+// Encerrar e cancelar ficam depois dos campos de comentário e de pendência
+const botoesVisita = () => `<button class="btn primary block" id="dEncerrar" style="margin-top:16px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>Encerrar visita</button>
+    <button class="btn block" id="dCancelaVisita" style="margin-top:8px">Cancelar visita</button>`;
 function ligarBlocoVisita(id){
   const c = cli(id);
   if($('#dVisita')) $('#dVisita').onclick = async () => {
@@ -1677,10 +1684,6 @@ function ligarBlocoVisita(id){
       if(!txt()){ $('#vaTxt').focus(); return; }
       va.notas = va.notas || []; va.notas.push({t:Date.now(), txt:txt()}); salvarVA();
       $('#vaNotas').innerHTML = htmlNotasVisita(); $('#vaTxt').value = ''; toast('Anotado');
-    };
-    $('#vaPend').onclick = () => {
-      if(!txt()){ toast('Escreva a pendência no campo de anotação'); $('#vaTxt').focus(); return; }
-      novaPendencia(c, txt()); $('#vaTxt').value = ''; atualizarPendencias(c); toast('Pendência guardada para a próxima visita');
     };
     $('#vaNotas').onclick = e => {
       const b = e.target.closest('[data-nota]'); if(!b) return;
