@@ -1105,7 +1105,7 @@ function usarCoordenadas(){
     p = {lat:-Math.abs(p.lat), lng:-Math.abs(p.lng)};
     toast('Coloquei o sinal de menos: no Brasil as coordenadas são negativas.');
   } else if(!noBrasil(p)) toast('Atenção: essas coordenadas ficam fora do Brasil.');
-  marcarAqui(p);
+  conferirNoMapa(p);
 }
 
 $('#sheetBody').addEventListener('click', e => {
@@ -1122,8 +1122,24 @@ $('#sheetBody').addEventListener('click', e => {
   }
 });
 $('#pickCancel').onclick = sairModoMarcar;
-$('#pickOk').onclick = () => { const c = map.getCenter(); sairModoMarcar(); marcarAqui({lat:c.lat,lng:c.lng}); };
-function sairModoMarcar(){ document.body.classList.remove('picking'); }
+// Coordenadas digitadas: antes de abrir o cadastro, mostra o ponto no mapa com o pino em cima, para
+// conferir se é o local certo e ajustar arrastando (pedido do usuário em 08/10/2026: o cadastro abria
+// direto e, no celular, o painel cobre o mapa, então não dava para saber se o ponto estava certo).
+// pickExato guarda a coordenada digitada: se o mapa não for arrastado, vale ela, sem arredondar.
+let pickExato = null;
+function conferirNoMapa(p){
+  fecharPainel(); seguirMinhaPos(false);
+  pickExato = {lat:p.lat, lng:p.lng};
+  map.setView([p.lat, p.lng], Math.max(map.getZoom(), 17), {animate:false});
+  $('#pickTxt').textContent = `O pino mostra o ponto das coordenadas. Confira se é o local ${DO_PINO[marcarComo]}; se precisar, arraste o mapa para ajustar.`;
+  document.body.classList.add('picking');
+}
+$('#pickOk').onclick = () => {
+  const c = map.getCenter();
+  const p = pickExato && map.distance(c, [pickExato.lat, pickExato.lng]) < 3 ? pickExato : {lat:c.lat, lng:c.lng};
+  sairModoMarcar(); marcarAqui(p);
+};
+function sairModoMarcar(){ document.body.classList.remove('picking'); pickExato = null; }
 
 function pegarGPS(ok){
   if(!navigator.geolocation){ toast('Este navegador não oferece GPS.'); return; }
