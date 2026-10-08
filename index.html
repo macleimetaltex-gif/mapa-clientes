@@ -2700,6 +2700,10 @@ async function sincronizar(){
   return sincronizarAgora();
 }
 async function sincronizarAgora(){
+  // App aberto sem internet: a sessão é retomada aqui, na primeira sincronização com sinal
+  if(nuvem.sb && !nuvem.usuario && navigator.onLine && !document.documentElement.dataset.login && temSessaoGuardada()){
+    try{ const {data} = await nuvem.sb.auth.getSession(); if(data.session) nuvem.usuario = data.session.user; }catch(e){}
+  }
   if(!nuvem.sb || !nuvem.usuario) return null;
   if(!navigator.onLine){ marcarNuvem('offline'); return null; }
   if(nuvem.rodando){ nuvem.deNovo = true; return null; }
@@ -2907,15 +2911,24 @@ $('#sheetBody').addEventListener('click', async e => {
     await nuvem.sb.auth.signOut(); nuvem.usuario = null; marcarNuvem('sair'); telaLogin('entrar');
   }
 });
+// O Supabase só apaga o login guardado quando ele é recusado de verdade (senha trocada, conta removida);
+// falha de rede não apaga. Por isso "tem login guardado" basta para abrir o app sem internet
+function temSessaoGuardada(){ try{ for(let i = 0; i < localStorage.length; i++) if(/^sb-.*-auth-token$/.test(localStorage.key(i))) return true; }catch(e){} return false; }
+function entrarSemRede(){ esconderLogin(); marcarNuvem('offline'); }
 if(nuvem.sb){
   const linkSenha = LINK_SENHA;
+  // Aberto sem internet (o service worker entrega a cópia guardada): avisa logo, sem esperar o Supabase desistir de renovar a sessão
+  if(!navigator.onLine && temSessaoGuardada() && !linkSenha){ marcarNuvem('offline'); setTimeout(() => toast('Sem internet: o app abriu com os dados guardados no aparelho.'), 900); }
   nuvem.sb.auth.getSession().then(({data}) => {
     nuvem.usuario = data.session ? data.session.user : null;
     marcarNuvem(nuvem.usuario ? 'ok' : 'sair');
     if(nuvem.usuario && linkSenha) telaLogin('nova');
     else if(nuvem.usuario){ if(mesmaConta(nuvem.usuario)) esconderLogin(); sincronizar(); }
+    // Sem sessão válida, mas com o login guardado no aparelho: é o app aberto sem internet (a sessão vence
+    // em 1 hora e só renova com rede). Entra com os dados do aparelho; a sincronização volta com o sinal
+    else if(temSessaoGuardada() && !linkSenha) entrarSemRede();
     else telaLogin('entrar', avisoLink);
-  }).catch(() => telaLogin('entrar', avisoLink));
+  }).catch(() => { if(temSessaoGuardada() && !linkSenha) entrarSemRede(); else telaLogin('entrar', avisoLink); });
   nuvem.sb.auth.onAuthStateChange((ev, s) => {
     nuvem.usuario = s ? s.user : null;
     if(ev==='PASSWORD_RECOVERY') telaLogin('nova');
@@ -3957,7 +3970,7 @@ desenharSalvaVisivel();
 
 /* ================= Início ================= */
 // Service worker: só para o Chrome oferecer "Instalar app" (não guarda cache; veja sw.js)
-if('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
 aplicarTema();
 gerarImagensGL();
 desenhar();
