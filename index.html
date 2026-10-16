@@ -269,6 +269,10 @@ textarea.inp{height:auto;min-height:88px;padding:12px 14px;resize:vertical;line-
 .facts{margin:12px 0 4px;display:grid;gap:8px}
 .fact{display:flex;gap:10px;align-items:flex-start;font-size:16px;line-height:1.35}
 .fact svg{flex:none;margin-top:2px;opacity:.6}
+/* Código Metaltex na ficha: o código em destaque e o botão de copiar ao lado */
+.cod-metaltex{align-items:center}
+.cod-metaltex b{font:700 17px var(--cond);letter-spacing:.3px;user-select:all;-webkit-user-select:all}
+.btn-copiar{margin-left:auto;flex:none;height:38px;padding:0 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface-2);font:600 14px var(--sans);color:var(--ink)}
 .lastvisit{margin:14px 0;padding:12px 14px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line);font-size:15px}
 .lastvisit b{font-family:var(--cond);font-size:18px}
 .lastvisit .ultnota{margin:6px 0 2px;font-size:15px;line-height:1.4;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
@@ -674,6 +678,13 @@ function migrar(c){
   // Contador de visitas (05/10/2026): só sobe, ao encerrar uma visita; apagar do histórico não diminui.
   // Clientes de antes do contador começam com o número de visitas que já tinham no histórico
   if(typeof c.nVisitas !== 'number') c.nVisitas = (c.visitas || []).length;
+  // Código Metaltex (16/10/2026): os importados do My Maps traziam o código como uma linha solta nas
+  // observações (ex.: "C00067121"). Na primeira vez, essa linha vira o campo próprio e sai das observações
+  if(!('codigo' in c)){
+    const linhas = String(c.obs || '').split('\n'), i = linhas.findIndex(l => /^\s*C\d{6,10}\s*$/i.test(l));
+    c.codigo = i >= 0 ? linhas[i].trim().toUpperCase() : '';
+    if(i >= 0){ linhas.splice(i, 1); c.obs = linhas.join('\n').trim(); }
+  }
   return c;
 }
 const ehP = c => c.tipo === 'prospect';
@@ -723,7 +734,7 @@ function atrasado(c){
 const normal = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 function passaFiltro(c){
   if(busca){
-    const t = normal(c.nome+' '+(c.responsavel||'')+' '+(c.endereco||'')+' '+(c.obs||''));
+    const t = normal(c.nome+' '+(c.codigo||'')+' '+(c.responsavel||'')+' '+(c.endereco||'')+' '+(c.obs||''));
     if(!t.includes(busca)) return false;
   }
   // Região (barra de baixo): soma com o filtro do topo
@@ -1253,6 +1264,8 @@ function abrirFormulario(pos, id){
     <h2 id="fTitulo">${id?'Editar cliente':'Novo cliente'}</h2>
     <label class="f">Nome
       <input class="inp" id="fNome" value="${esc(c.nome)}" autocomplete="off" required></label>
+    <label class="f so-cliente">Código Metaltex
+      <input class="inp" id="fCodigo" value="${esc(c.codigo || '')}" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Ex.: C00067121"></label>
     <label class="f so-cliente">Responsável
       <input class="inp" id="fResp" value="${esc(c.responsavel)}" autocomplete="off"></label>
     <label class="f">Telefone / WhatsApp
@@ -1309,7 +1322,7 @@ function abrirFormulario(pos, id){
       toast(id ? `Transformado em ${L_.nome}` : `${L_.rotulo === 'Posto de gasolina' ? 'Posto' : L_.rotulo} salvo`);
       return;
     }
-    const dados ={nome, responsavel:$('#fResp').value.trim(), telefone:$('#fTel').value.trim(), endereco:$('#fEnd').value.trim(), obs:$('#fObs').value.trim(), status:statusEscolhido(c.status||'nao'), tipo:tipoEscolhido()};
+    const dados ={nome, codigo:$('#fCodigo').value.replace(/\s+/g, '').toUpperCase(), responsavel:$('#fResp').value.trim(), telefone:$('#fTel').value.trim(), endereco:$('#fEnd').value.trim(), obs:$('#fObs').value.trim(), status:statusEscolhido(c.status||'nao'), tipo:tipoEscolhido()};
     // Região: só mexe se o seletor apareceu (sem regiões criadas, o cliente fica como estava)
     if($('#segReg')) dados.regiao = ($('#segReg [aria-pressed="true"]') || {dataset:{}}).dataset.r || null;
     // Cliente repetido: nome igual ou parecido a menos de 300 m
@@ -1358,6 +1371,14 @@ async function enderecoAutomatico(lat,lng){
 }
 
 /* ================= Detalhe do cliente ================= */
+// Copia para a área de transferência; sem a API moderna (ou sem permissão), usa o jeito antigo
+async function copiarTexto(txt){
+  try{ await navigator.clipboard.writeText(txt); return true; }catch(e){}
+  try{
+    const t = document.createElement('textarea'); t.value = txt; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok;
+  }catch(e){ return false; }
+}
 const htmlNVis = c => `<b>${c.nVisitas || 0}</b> visita${(c.nVisitas || 0) === 1 ? '' : 's'}`;
 function abrirDetalhe(id){
   const c = clientes.find(x=>x.id===id); if(!c) return;
@@ -1382,6 +1403,7 @@ function abrirDetalhe(id){
     <h2>${esc(c.nome)}</h2>
     ${emVisita ? `${blocoVisita(c)}${hPend}${botoesVisita()}<h3>Dados do cliente</h3>${hFachada}` : ''}
     <div class="facts">
+      <div class="fact cod-metaltex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>${c.codigo ? `<span>Cód. Metaltex <b id="codTxt">${esc(c.codigo)}</b></span><button class="btn-copiar" id="codCopiar" type="button">Copiar</button>` : `<button class="linkbtn" id="codAdd" type="button">Adicionar código Metaltex</button>`}</div>
       ${c.responsavel?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>${esc(c.responsavel)}</span></div>`:''}
       ${c.endereco?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-7.2 7-12a7 7 0 0 0-14 0c0 4.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg><span>${esc(c.endereco)}${dist?` <span class="muted">(${dist} de você)</span>`:''}</span></div>`:''}
       ${c.obs?`<div class="fact"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v12l-4 4H5z"/><path d="M9 9h6M9 13h4"/></svg><span style="white-space:pre-wrap">${esc(c.obs)}</span></div>`:''}
@@ -1409,6 +1431,13 @@ function abrirDetalhe(id){
   if(map.getZoom()<15) map.setView([c.lat,c.lng],16); else map.panTo([c.lat,c.lng]);
   ligarBlocoVisita(id);
   ligarPendencias(id);
+  // Código Metaltex: copiar com um toque (para colar no sistema da empresa ou no WhatsApp)
+  if($('#codCopiar')) $('#codCopiar').onclick = async () => {
+    const ok = await copiarTexto(c.codigo);
+    toast(ok ? `Código ${c.codigo} copiado` : 'Não consegui copiar. Toque e segure no código para copiar.');
+    if(ok){ $('#codCopiar').textContent = 'Copiado ✓'; setTimeout(() => { if($('#codCopiar')) $('#codCopiar').textContent = 'Copiar'; }, 2000); }
+  };
+  if($('#codAdd')) $('#codAdd').onclick = () => { abrirFormulario(null, id); setTimeout(() => $('#fCodigo')?.focus(), 280); };
   // Contador de visitas: tocar vira campo para digitar o número (ex.: visitas feitas antes do app);
   // Enter ou sair do campo grava, Esc desiste. Depois continua somando a cada visita encerrada
   $('#nVis').onclick = () => {
