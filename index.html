@@ -203,7 +203,13 @@ body.selecting .fabs{display:none}
 .stops .nm{display:flex;align-items:center;gap:7px;font-weight:600;font-size:16px}
 .stops .nm .dot{flex:none;width:12px;height:12px;border-radius:50%;background:var(--c)}
 .stops .nm .dot.p{width:16px;height:16px}
-.stops .sub{font-size:13px;color:var(--ink-2)}
+.stops .sub{font-size:13px;color:var(--ink-2);display:flex;align-items:center;flex-wrap:wrap;column-gap:8px}
+.stops .nmbtn{cursor:pointer}
+/* Código Metaltex na parada da rota, com o botão de copiar ao lado */
+.cod-parada{display:inline-flex;align-items:center;gap:2px}
+.cod-parada b{font:700 13px var(--cond);color:var(--ink);letter-spacing:.2px}
+.copiar-mini{flex:none;width:32px;height:28px;display:grid;place-items:center;border:0;border-radius:8px;background:none;color:var(--ink-2)}
+.copiar-mini.ok{color:var(--go)}
 .stops .mv{flex:none;display:flex;gap:3px}
 .stops .mv button{width:34px;height:38px;border:0;background:var(--surface-2);border-radius:10px;font-size:13px;color:var(--ink-2)}
 .stops .mv button:disabled{opacity:.3}
@@ -1372,6 +1378,8 @@ async function enderecoAutomatico(lat,lng){
 }
 
 /* ================= Detalhe do cliente ================= */
+// Ícone de copiar (duas folhas), para os botões pequenos
+const ICO_COPIAR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
 // "-6.067512, -49.902034": o mesmo formato que o Google Maps usa e que o cadastro por coordenada aceita
 const textoCoord = c => `${(+c.lat).toFixed(6)}, ${(+c.lng).toFixed(6)}`;
 // Copia para a área de transferência; sem a API moderna (ou sem permissão), usa o jeito antigo
@@ -3577,7 +3585,7 @@ function htmlDia(){
       <ol class="stops">${cs.map((c,i)=>{ const f = r.feitas.includes(c.id); const s = STATUS[c.status]||STATUS.nao;
         return `<li class="${f?'done':''}">
           <button class="chk" data-rt="feita" data-id="${c.id}" aria-label="${f?'Desmarcar':'Marcar como visitado'}">${f?'✓':i+1}</button>
-          <button class="nmbtn" data-rt="abrir" data-id="${c.id}"><span class="nm"><span class="dot${ehP(c)?' p':''}" style="--c:${s.cor}"></span>${esc(c.nome)}</span><span class="sub">${s.label}</span></button>
+          <div class="nmbtn" role="button" tabindex="0" data-rt="abrir" data-id="${c.id}"><span class="nm"><span class="dot${ehP(c)?' p':''}" style="--c:${s.cor}"></span>${esc(c.nome)}</span><span class="sub">${s.label}${c.codigo ? `<span class="cod-parada"><b>${esc(c.codigo)}</b><button type="button" class="copiar-mini" data-rt="copiarCod" data-id="${c.id}" aria-label="Copiar o código ${esc(c.codigo)}">${ICO_COPIAR}</button></span>` : ''}</span></div>
           <span class="mv"><button data-rt="sobe" data-i="${i}" aria-label="Subir" ${i===0?'disabled':''}>▲</button><button data-rt="desce" data-i="${i}" aria-label="Descer" ${i===cs.length-1?'disabled':''}>▼</button><button data-rt="tirar" data-id="${c.id}" aria-label="Tirar da rota">×</button></span>
         </li>`; }).join('')}</ol>
       <div class="row" style="margin-top:12px">
@@ -3970,6 +3978,14 @@ $('#sheetBody').addEventListener('click', async e => {
 $('#sheetBody').addEventListener('click', async e => {
   const b = e.target.closest('[data-rt]'); if(!b) return;
   const a = b.dataset.rt, r = rotaDoDia(false);
+  // Código Metaltex de uma parada da rota (16/10/2026): copia sem abrir a ficha
+  if(a==='copiarCod'){
+    const c = cli(b.dataset.id); if(!c || !c.codigo) return;
+    const ok = await copiarTexto(c.codigo);
+    toast(ok ? `Código ${c.codigo} copiado` : 'Não consegui copiar. Abra a ficha do cliente e copie por lá.');
+    if(ok){ b.classList.add('ok'); setTimeout(() => b.classList.remove('ok'), 1500); }
+    return;
+  }
   if(a==='dia') escolherDia(b.dataset.k);
   if(a==='aba') abrirRotas(b.dataset.v);
   if(a==='selecionar') entrarSelecao();
