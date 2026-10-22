@@ -3140,9 +3140,15 @@ function montarGL(){
     paint:{'line-color':COR_ROTA().brilho, 'line-width':11, 'line-blur':7, 'line-opacity':escuro() ? .5 : .38}});
   if(!g.getLayer('rota')) g.addLayer({id:'rota', type:'line', source:'rota', layout:{'line-cap':'round', 'line-join':'round'},
     paint:{'line-color':COR_ROTA().linha, 'line-width':3.5, 'line-opacity':.95, 'line-dasharray':[2, 2.2]}});
+  // Radar do cliente selecionado: a metade de trás dos anéis fica por baixo das gotas, a da frente por cima
+  if(!g.getSource('radar')) g.addSource('radar', {type:'geojson', data:{type:'FeatureCollection', features:[]}});
+  RADAR.cor = null; // o estilo recarregado (troca de tema) perde as imagens do radar: refaz na próxima vez
+  if(!g.getLayer('radar-tras')) g.addLayer(camadaRadar('radar-tras'));
   // Nome à direita da cabeça da gota (a cabeça sobe com o tamanho da gota)
   if(!g.getLayer('clientes')) g.addLayer(camadaSimbolos('clientes', tamanhoComSelecao, nomeCliente));
+  if(!g.getLayer('radar-frente')) g.addLayer(camadaRadar('radar-frente'));
   if(!g.getLayer('lugares')) g.addLayer(camadaSimbolos('lugares', tamanhoGL(false), nomeLugar));
+  atualizarRadar();
 }
 // Atualiza os dados (filtro, busca, seleção, cadastro...) sem recriar as camadas
 function atualizarGL(){
@@ -3150,6 +3156,58 @@ function atualizarGL(){
   if(!GL.estiloPronto || !glMapa.getSource('clientes')){ montarGL(); return; }
   glMapa.getSource('clientes').setData(geoClientes());
   glMapa.getSource('lugares').setData(geoLugares());
+  atualizarRadar();
+}
+
+/* ---------- Radar na ponta da gota do cliente selecionado ---------- */
+// Pedido do usuário em 22/10/2026: ao abrir um cliente, além da gota crescer, anéis saem da ponta da
+// gota como um radar, achatados (vistos de lado, efeito 3D) e passando por trás da gota. Cada quadro
+// da animação é uma imagem pronta (metade de trás e metade da frente do anel, na cor da situação); o
+// relógio só troca a imagem das duas camadas, 16 vezes por segundo, e para quando nada está selecionado.
+var RADAR = {timer:null, i:0, cor:null, feitas:new Set()};
+const RADAR_QUADROS = 24, RADAR_PASSO = 62, RADAR_W = 120, RADAR_H = 50, RADAR_DPR = 3;
+function camadaRadar(id){
+  return {id, type:'symbol', source:'radar', layout:{
+    'icon-image':'', 'icon-anchor':'center', 'icon-allow-overlap':true, 'icon-ignore-placement':true,
+    'icon-size':['step', ['zoom'], .65, 12, .8, 14, 1]}};
+}
+// Desenha os quadros das duas metades numa cor (uma vez por cor; ficam guardados no mapa)
+function gerarQuadrosRadar(cor){
+  const hex = cor.slice(1).toLowerCase(); if(RADAR.feitas.has(hex)) return;
+  const cv = document.createElement('canvas'); cv.width = RADAR_W*RADAR_DPR; cv.height = RADAR_H*RADAR_DPR;
+  const cx = cv.getContext('2d'), mx = RADAR_W/2, my = RADAR_H/2;
+  for(let i = 0; i < RADAR_QUADROS; i++){
+    for(const metade of ['t', 'f']){
+      cx.setTransform(RADAR_DPR, 0, 0, RADAR_DPR, 0, 0); cx.clearRect(0, 0, RADAR_W, RADAR_H);
+      // dois anéis defasados de meio ciclo: enquanto um nasce na ponta, o outro some lá fora
+      for(const fase of [i / RADAR_QUADROS, (i / RADAR_QUADROS + .5) % 1]){
+        const rx = 5 + 52*fase, ry = rx * .36, alfa = Math.pow(1 - fase, 1.4);
+        cx.globalAlpha = alfa; cx.strokeStyle = cor; cx.lineWidth = 3.2 - fase*1.4;
+        cx.beginPath(); cx.ellipse(mx, my, rx, ry, 0, metade === 't' ? Math.PI : 0, metade === 't' ? 2*Math.PI : Math.PI); cx.stroke();
+        // atrás, um véu bem leve dentro do anel dá a sensação de chão
+        if(metade === 't'){ cx.globalAlpha = alfa * .18; cx.fillStyle = cor; cx.beginPath(); cx.ellipse(mx, my, rx, ry, 0, 0, 2*Math.PI); cx.fill(); }
+      }
+      const nome = `radar-${hex}-${metade}${i}`, d = cx.getImageData(0, 0, cv.width, cv.height);
+      if(glMapa.hasImage(nome)) glMapa.updateImage(nome, d); else glMapa.addImage(nome, d, {pixelRatio:RADAR_DPR});
+    }
+  }
+  RADAR.feitas.add(hex);
+}
+function atualizarRadar(){
+  if(!usarGL || !GL.estiloPronto || !glMapa.getSource('radar')) return;
+  const c = selId && cli(selId), mostra = !!(c && passaFiltro(c));
+  glMapa.getSource('radar').setData({type:'FeatureCollection', features: mostra ? [{type:'Feature', geometry:{type:'Point', coordinates:[c.lng, c.lat]}, properties:{}}] : []});
+  if(!mostra){ clearInterval(RADAR.timer); RADAR.timer = null; return; }
+  const cor = (STATUS[c.status] || STATUS.nao).cor;
+  if(RADAR.cor !== cor){ if(RADAR.cor === null) RADAR.feitas.clear(); gerarQuadrosRadar(cor); RADAR.cor = cor; passoRadar(); }
+  if(!RADAR.timer) RADAR.timer = setInterval(passoRadar, RADAR_PASSO);
+}
+function passoRadar(){
+  if(document.hidden || !RADAR.cor || !GL.estiloPronto || !glMapa.getLayer('radar-tras')) return;
+  RADAR.i = (RADAR.i + 1) % RADAR_QUADROS;
+  const hex = RADAR.cor.slice(1).toLowerCase();
+  glMapa.setLayoutProperty('radar-tras', 'icon-image', `radar-${hex}-t${RADAR.i}`);
+  glMapa.setLayoutProperty('radar-frente', 'icon-image', `radar-${hex}-f${RADAR.i}`);
 }
 // Cores da linha da rota do dia: azul vivo no claro, ciano claro no escuro, com o brilho em volta
 const COR_ROTA = () => escuro() ? {linha:'#A5F3FC', brilho:'#22D3EE'} : {linha:'#1D4ED8', brilho:'#3B82F6'};
