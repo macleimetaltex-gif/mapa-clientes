@@ -279,6 +279,11 @@ textarea.inp{height:auto;min-height:88px;padding:12px 14px;resize:vertical;line-
 .cod-metaltex{align-items:center}
 .cod-metaltex b{font:700 17px var(--cond);letter-spacing:.3px;user-select:all;-webkit-user-select:all;word-break:break-all}
 .cod-metaltex span{min-width:0}
+/* Busca na lista de clientes: fica presa no alto do painel enquanto a lista rola */
+.busca-lista{position:sticky;top:-1px;z-index:2;display:flex;align-items:center;gap:8px;margin:0 0 6px;padding:6px 0 8px;background:var(--surface);color:var(--ink-2)}
+.busca-lista svg{position:absolute;left:14px;pointer-events:none}
+.busca-lista .inp{margin:0;padding-left:42px}
+.cod-lista{font:700 13px var(--cond);color:var(--ink)}
 .btn-copiar{margin-left:auto;flex:none;height:38px;padding:0 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface-2);font:600 14px var(--sans);color:var(--ink)}
 .lastvisit{margin:14px 0;padding:12px 14px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line);font-size:15px}
 .lastvisit b{font-family:var(--cond);font-size:18px}
@@ -2062,11 +2067,21 @@ function abrirLista(){
   abrirPainel(`
     <h2>${titulo} <span class="muted" style="font-weight:600">(${lista.length})</span></h2>
     <p class="muted" style="margin:0 0 8px;font-size:14px">${minhaPos?'Ordenados pelos mais próximos de você.':'Ordenados por quem está há mais tempo sem visita. Toque em ◎ para ordenar por distância.'}</p>
-    ${lista.length ? `<ul class="list">${lista.map(({c,d,km}) => `<li><button data-id="${c.id}"><span class="dot${ehP(c)?' p':''}" style="--c:${(STATUS[c.status]||STATUS.nao).cor}"></span><span><span class="nm">${esc(c.nome)}</span><span class="sub">${(STATUS[c.status]||STATUS.nao).label}, ${textoVisitado(c, d).toLowerCase()}${pendAbertas(c).length ? ` · 📌 ${pendAbertas(c).length} pendência${pendAbertas(c).length===1?"":"s"}` : ""}</span></span><span class="dist">${fmtDist(km)}</span></button></li>`).join('')}</ul>`
+    ${lista.length ? `<label class="busca-lista"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="inp" id="listaBusca" type="search" placeholder="Buscar pelo nome ou código Metaltex" autocomplete="off" enterkeyhint="search"></label><ul class="list" id="listaCli">${lista.map(({c,d,km}) => `<li data-busca="${esc(normal(c.nome + ' ' + (c.codigo || '')))}"><button data-id="${c.id}"><span class="dot${ehP(c)?' p':''}" style="--c:${(STATUS[c.status]||STATUS.nao).cor}"></span><span><span class="nm">${esc(c.nome)}</span><span class="sub">${c.codigo ? `<b class="cod-lista">${esc(c.codigo)}</b> · ` : ''}${(STATUS[c.status]||STATUS.nao).label}, ${textoVisitado(c, d).toLowerCase()}${pendAbertas(c).length ? ` · 📌 ${pendAbertas(c).length} pendência${pendAbertas(c).length===1?"":"s"}` : ""}</span></span><span class="dist">${fmtDist(km)}</span></button></li>`).join('')}</ul>`
       : `<div class="empty">Nenhum cliente neste filtro.</div>`}
-    ${htmlListaLugares()}
+    <div class="empty" id="listaNada" hidden>Nenhum cliente com esse nome ou código.</div>
+    <div id="listaLugares">${htmlListaLugares()}</div>
   `);
   document.querySelectorAll('.list button[data-id]:not([data-l])').forEach(b => b.onclick = () => abrirDetalhe(b.dataset.id));
+  // Busca dentro da lista (pedido do usuário em 22/10/2026): nome ou código Metaltex, sem acento e sem
+  // diferença de maiúscula. Filtra na hora, sem refazer a lista; os lugares somem enquanto busca
+  if($('#listaBusca')) $('#listaBusca').oninput = e => {
+    const q = normal(e.target.value.trim()); let n = 0;
+    document.querySelectorAll('#listaCli li').forEach(li => { const ok = !q || li.dataset.busca.includes(q); li.hidden = !ok; if(ok) n++; });
+    $('#listaNada').hidden = n > 0;
+    $('#listaLugares').hidden = !!q;
+    $('#sheetBody h2 .muted').textContent = q ? `(${n} de ${lista.length})` : `(${lista.length})`;
+  };
 }
 
 /* ================= Situações (Menu > Visitas > Situações) ================= */
