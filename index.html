@@ -3164,7 +3164,7 @@ function atualizarGL(){
 // gota como um radar, achatados (vistos de lado, efeito 3D) e passando por trás da gota. Cada quadro
 // da animação é uma imagem pronta (metade de trás e metade da frente do anel, na cor da situação); o
 // relógio só troca a imagem das duas camadas, 16 vezes por segundo, e para quando nada está selecionado.
-var RADAR = {timer:null, i:0, cor:null, feitas:new Set()};
+var RADAR = {timer:null, i:0, cor:null, passo:0, feitas:new Set()};
 const RADAR_QUADROS = 24, RADAR_PASSO = 62, RADAR_W = 120, RADAR_H = 50, RADAR_DPR = 3;
 function camadaRadar(id){
   return {id, type:'symbol', source:'radar', layout:{
@@ -3193,21 +3193,30 @@ function gerarQuadrosRadar(cor){
   }
   RADAR.feitas.add(hex);
 }
+// Radar no cliente com a ficha aberta e, desde 22/10/2026 (pedido do usuário), em todos os clientes da
+// rota mostrada no mapa. Cada ponto leva a cor da sua situação (propriedade "hex"); a imagem de cada
+// camada é uma expressão que junta essa cor com o número do quadro. Só com a rota (sem ficha aberta)
+// o passo é mais lento, para gastar menos bateria com o app aberto o dia todo
+const RADAR_PASSO_ROTA = 90;
 function atualizarRadar(){
   if(!usarGL || !GL.estiloPronto || !glMapa.getSource('radar')) return;
-  const c = selId && cli(selId), mostra = !!(c && passaFiltro(c));
-  glMapa.getSource('radar').setData({type:'FeatureCollection', features: mostra ? [{type:'Feature', geometry:{type:'Point', coordinates:[c.lng, c.lat]}, properties:{}}] : []});
-  if(!mostra){ clearInterval(RADAR.timer); RADAR.timer = null; return; }
-  const cor = (STATUS[c.status] || STATUS.nao).cor;
-  if(RADAR.cor !== cor){ if(RADAR.cor === null) RADAR.feitas.clear(); gerarQuadrosRadar(cor); RADAR.cor = cor; passoRadar(); }
-  if(!RADAR.timer) RADAR.timer = setInterval(passoRadar, RADAR_PASSO);
+  if(RADAR.cor === null){ RADAR.feitas.clear(); RADAR.cor = ''; } // estilo recarregado: refazer as imagens
+  const naRota = idsNaRota();
+  const alvos = clientes.filter(c => (c.id === selId || naRota.has(c.id)) && passaFiltro(c));
+  glMapa.getSource('radar').setData({type:'FeatureCollection', features: alvos.map(c => ({type:'Feature',
+    geometry:{type:'Point', coordinates:[c.lng, c.lat]}, properties:{hex:(STATUS[c.status] || STATUS.nao).cor.slice(1).toLowerCase()}}))});
+  if(!alvos.length){ clearInterval(RADAR.timer); RADAR.timer = null; RADAR.passo = 0; return; }
+  const novas = [...new Set(alvos.map(c => (STATUS[c.status] || STATUS.nao).cor))].filter(cor => !RADAR.feitas.has(cor.slice(1).toLowerCase()));
+  novas.forEach(gerarQuadrosRadar);
+  const passo = alvos.some(c => c.id === selId) ? RADAR_PASSO : RADAR_PASSO_ROTA;
+  if(RADAR.passo !== passo){ clearInterval(RADAR.timer); RADAR.timer = setInterval(passoRadar, passo); RADAR.passo = passo; }
+  passoRadar();
 }
 function passoRadar(){
-  if(document.hidden || !RADAR.cor || !GL.estiloPronto || !glMapa.getLayer('radar-tras')) return;
+  if(document.hidden || !GL.estiloPronto || !glMapa.getLayer('radar-tras')) return;
   RADAR.i = (RADAR.i + 1) % RADAR_QUADROS;
-  const hex = RADAR.cor.slice(1).toLowerCase();
-  glMapa.setLayoutProperty('radar-tras', 'icon-image', `radar-${hex}-t${RADAR.i}`);
-  glMapa.setLayoutProperty('radar-frente', 'icon-image', `radar-${hex}-f${RADAR.i}`);
+  glMapa.setLayoutProperty('radar-tras', 'icon-image', ['concat', 'radar-', ['get', 'hex'], '-t' + RADAR.i]);
+  glMapa.setLayoutProperty('radar-frente', 'icon-image', ['concat', 'radar-', ['get', 'hex'], '-f' + RADAR.i]);
 }
 // Cores da linha da rota do dia: azul vivo no claro, ciano claro no escuro, com o brilho em volta
 const COR_ROTA = () => escuro() ? {linha:'#A5F3FC', brilho:'#22D3EE'} : {linha:'#1D4ED8', brilho:'#3B82F6'};
